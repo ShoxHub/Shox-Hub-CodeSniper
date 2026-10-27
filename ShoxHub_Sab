@@ -1,1260 +1,642 @@
---[[
-	Code Sniper | Steal a Brainrot (nur AA-Server) | Delta / Android
-	Schritt 2: Intros + Animationen
-	- Intro 1 + Intro 2 (Song wird beim ersten Start automatisch geladen und
-	  im Ordner CodeSniper/music gespeichert, danach nur noch lokal)
-	- Intro in den Einstellungen waehlbar (Intro 1 / Intro 2 / Aus), Tipp = Vorschau
-	- Smooth Animationen (Fenster auf/zu, Minimieren, Floating Button, Themes, Rahmen)
-	- Safe Mode (Standard AN), Floating Button, Themes, Console, Discord, Beenden
-	Erkennung + Einloesen kommen in Schritt 3 und 4.
-]]
-
-local G = (typeof(getgenv) == "function" and getgenv()) or _G
-pcall(function()
-	if G.CodeSniperStop then G.CodeSniperStop() end
-end)
-
-local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
-local TS = game:GetService("TweenService")
-local HS = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
-
-local lp = Players.LocalPlayer
-if not lp then
-	Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
-	lp = Players.LocalPlayer
-end
-
-local VERSION = "v0.2 (Schritt 2)"
-local DISCORD = "https://discord.gg/EA7xS26mA9"
-local FILE = "CodeSniper_settings.json"
-local W, H, HMIN = 260, 330, 40
-
--- THEMES
-local function C(r, g, b)
-	return Color3.fromRGB(r, g, b)
-end
-
-local function mkTheme(bg, btn, txt, acc, sub)
-	return {
-		bg = bg,
-		btn = btn,
-		txt = txt,
-		acc = acc,
-		sub = sub,
-		line = btn:Lerp(acc, 0.35),
-		dim = bg:Lerp(C(0, 0, 0), 0.35),
-	}
-end
-
-local THEMES = {
-	Frost = mkTheme(C(10, 22, 40), C(24, 48, 80), C(225, 242, 255), C(120, 200, 255), C(170, 205, 235)),
-	Lava = mkTheme(C(20, 8, 6), C(52, 22, 14), C(255, 225, 200), C(255, 100, 20), C(255, 190, 150)),
-	Natural = mkTheme(C(10, 24, 14), C(24, 52, 30), C(225, 245, 225), C(90, 200, 90), C(170, 210, 170)),
+local S = {
+	Players = game:GetService("Players"),
+	UIS = game:GetService("UserInputService"),
+	Tween = game:GetService("TweenService"),
+	Http = game:GetService("HttpService"),
+	RS = game:GetService("RunService"),
+	Sound = game:GetService("SoundService"),
 }
-local THEME_ORDER = { "Frost", "Lava", "Natural" }
-local INTRO_NAMES = { [0] = "Aus", [1] = "Intro 1", [2] = "Intro 2" }
-local INTRO_NEXT = { [1] = 2, [2] = 0, [0] = 1 }
+local env = (getgenv and getgenv()) or _G
+if env.CodeSniperStop then pcall(env.CodeSniperStop) end
 
--- EINSTELLUNGEN (werden gespeichert)
-local cfg = {
-	theme = "Frost",
-	safe = true,
-	sniper = true,
-	intro = 1,
-	min = false,
-	pos = { 20, 50 },
-	mpos = { 20, 160 },
+local function RGB(r, g, b) return Color3.fromRGB(r, g, b) end
+local CS = {
+	Version = "v0.2",
+	Running = true,
+	Open = true,
+	Token = 0,
+	Conn = {},
+	Log = {},
+	Order = 0,
+	Dir = "CodeSniper",
+	MusicDir = "CodeSniper/music",
+	File = "CodeSniper_settings.json",
+	Discord = "https://discord.gg/EA7xS26mA9",
+	IntroUrl = "https://raw.githubusercontent.com/ShoxHub/Shox-Hub-Ctd/main/intro.ogg",
+	IntroUrl2 = "https://files.catbox.moe/j5p4sg.ogg",
+	Settings = { SafeMode = true, Sniper = false, Theme = "Frost", Scale = 2, Trans = 1, Intro = true },
+	Scales = { 0.85, 1, 1.2 },
+	ScaleNames = { "S", "M", "L" },
+	Trans = { 0, 0.2, 0.4 },
+	ThemeOrder = { "Frost", "Lava", "Natural" },
+	Themes = {
+		Frost = { bg = RGB(10, 22, 40), panel = RGB(24, 48, 80), accent = RGB(120, 200, 255), text = RGB(225, 242, 255), off = RGB(40, 64, 96), sub = RGB(170, 205, 235) },
+		Lava = { bg = RGB(20, 8, 6), panel = RGB(52, 22, 14), accent = RGB(255, 100, 20), text = RGB(255, 225, 200), off = RGB(82, 38, 26), sub = RGB(255, 190, 150) },
+		Natural = { bg = RGB(10, 24, 14), panel = RGB(24, 52, 30), accent = RGB(90, 200, 90), text = RGB(225, 245, 225), off = RGB(40, 74, 50), sub = RGB(170, 210, 170) },
+	},
+	LET = { "S", "H", "O", "X", "H", "U", "B" },
+	BEATS = {
+		{ 0.05, 1, "a" }, { 0.52, 1, "b" }, { 0.84, 0.6 }, { 1.28, 0.9 }, { 1.58, 0.5 }, { 1.88, 0.9 },
+		{ 2.11, 0.6 }, { 2.48, 2.2, "drop" }, { 3.15, 1 }, { 3.74, 1 }, { 4.34, 1.2 }, { 4.75, 1.7, "end" },
+	},
+	FADE0 = 4.95,
+	FADE1 = 5.5,
 }
+CS.T = CS.Themes.Frost
+local U = { small = {}, ddItems = {} }
 
-pcall(function()
-	if isfile and readfile and isfile(FILE) then
-		local d = HS:JSONDecode(readfile(FILE))
-		if type(d) == "table" then
-			if THEMES[d.theme] then cfg.theme = d.theme end
-			if type(d.safe) == "boolean" then cfg.safe = d.safe end
-			if type(d.sniper) == "boolean" then cfg.sniper = d.sniper end
-			if d.intro == 0 or d.intro == 1 or d.intro == 2 then cfg.intro = d.intro end
-			if type(d.min) == "boolean" then cfg.min = d.min end
-			if type(d.pos) == "table" and tonumber(d.pos[1]) and tonumber(d.pos[2]) then
-				cfg.pos = { tonumber(d.pos[1]), tonumber(d.pos[2]) }
-			end
-			if type(d.mpos) == "table" and tonumber(d.mpos[1]) and tonumber(d.mpos[2]) then
-				cfg.mpos = { tonumber(d.mpos[1]), tonumber(d.mpos[2]) }
+pcall(makefolder, CS.Dir)
+pcall(makefolder, CS.MusicDir)
+
+CS.on = function(sig, fn)
+	local conn = sig:Connect(fn)
+	CS.Conn[#CS.Conn + 1] = conn
+	return conn
+end
+
+CS.isIn = function(input)
+	return input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1
+end
+
+CS.rname = function()
+	local chars = {}
+	for i = 1, 10 do chars[i] = string.char(math.random(97, 122)) end
+	return table.concat(chars)
+end
+
+CS.load = function()
+	pcall(function()
+		if isfile and readfile and isfile(CS.File) then
+			local data = S.Http:JSONDecode(readfile(CS.File))
+			if type(data) == "table" then
+				for key, value in pairs(data) do
+					if CS.Settings[key] ~= nil and type(value) == type(CS.Settings[key]) then
+						CS.Settings[key] = value
+					end
+				end
 			end
 		end
-	end
-end)
+	end)
+	if not CS.Themes[CS.Settings.Theme] then CS.Settings.Theme = "Frost" end
+	if not CS.Scales[CS.Settings.Scale] then CS.Settings.Scale = 2 end
+	if not CS.Trans[CS.Settings.Trans] then CS.Settings.Trans = 1 end
+end
 
-local function saveNow()
+CS.save = function()
 	pcall(function()
-		if writefile then writefile(FILE, HS:JSONEncode(cfg)) end
+		if writefile then writefile(CS.File, S.Http:JSONEncode(CS.Settings)) end
 	end)
 end
 
-local saveQueued = false
-local function save()
-	if saveQueued then return end
-	saveQueued = true
-	task.delay(0.5, function()
-		saveQueued = false
-		saveNow()
-	end)
-end
-
--- HELFER
-local alive = true
-local conns = {}
-local themed = {}
-local refreshers = {}
-local U = {}
-local ord = 0
-local T = THEMES[cfg.theme]
-
-local function on(sig, fn)
-	local c = sig:Connect(fn)
-	conns[#conns + 1] = c
-	return c
-end
-
-local function rname()
-	local t = {}
-	for i = 1, 10 do
-		t[i] = string.char(math.random(97, 122))
+CS.getParent = function()
+	local okHui, hui = pcall(function() return gethui and gethui() end)
+	if okHui and hui then return hui end
+	local okCore, core = pcall(function() return game:GetService("CoreGui") end)
+	if okCore and core then
+		local probe = Instance.new("Folder")
+		local okSet = pcall(function() probe.Parent = core end)
+		probe:Destroy()
+		if okSet then return core end
 	end
-	return table.concat(t)
+	return S.Players.LocalPlayer:WaitForChild("PlayerGui")
 end
 
-local function viewport()
-	local cam = workspace.CurrentCamera
-	return (cam and cam.ViewportSize) or Vector2.new(800, 400)
+CS.tw = function(inst, props, time, style, dir)
+	local info = TweenInfo.new(time or 0.25, style or Enum.EasingStyle.Quint, dir or Enum.EasingDirection.Out)
+	S.Tween:Create(inst, info, props):Play()
 end
 
-local function isPress(i)
-	return i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1
+CS.make = function(class, props, parent)
+	local inst = Instance.new(class)
+	for key, value in pairs(props) do inst[key] = value end
+	if parent then inst.Parent = parent end
+	return inst
 end
 
-local function tw(o, p, t, s)
-	pcall(function()
-		TS:Create(o, TweenInfo.new(t or 0.2, s or Enum.EasingStyle.Quint, Enum.EasingDirection.Out), p):Play()
-	end)
-end
-
-local function mk(class, props, parent)
-	local o = Instance.new(class)
-	for k, v in pairs(props) do
-		o[k] = v
-	end
-	o.Parent = parent
-	return o
-end
-
-local function reg(o, prop, key)
-	themed[#themed + 1] = { o, prop, key }
-	o[prop] = T[key]
-	return o
-end
-
-local function corner(o, r)
-	return mk("UICorner", { CornerRadius = UDim.new(0, r) }, o)
-end
-
-local function rgbStr(c)
-	return string.format("rgb(%d,%d,%d)", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
-end
-
-local function guiParent()
-	local ok, h = pcall(function()
-		return gethui and gethui()
-	end)
-	if ok and h then return h end
-	local ok2, cg = pcall(function()
-		return game:GetService("CoreGui")
-	end)
-	if ok2 and cg then return cg end
-	return lp:WaitForChild("PlayerGui")
-end
-
-local function newGui(order)
-	local g = Instance.new("ScreenGui")
-	g.Name = rname()
-	g.ResetOnSpawn = false
-	g.IgnoreGuiInset = true
-	g.DisplayOrder = order
-	g.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	local ok = pcall(function()
-		g.Parent = guiParent()
-	end)
-	if not ok or not g.Parent then
-		g.Parent = lp:WaitForChild("PlayerGui")
-	end
-	return g
-end
-
--- LOG + STATUS
-local logLines = {}
-
-local function log(kind, msg)
-	local col
-	if kind == "ok" then
-		col = "rgb(120,225,130)"
-	elseif kind == "warn" then
-		col = "rgb(240,200,90)"
-	elseif kind == "err" then
-		col = "rgb(240,100,100)"
-	else
-		col = rgbStr(T.txt)
-	end
-	local text = tostring(msg):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
-	logLines[#logLines + 1] = '<font color="' .. rgbStr(T.sub) .. '">' .. os.date("%H:%M:%S") .. '</font> <font color="' .. col .. '">' .. text .. "</font>"
-	if #logLines > 80 then table.remove(logLines, 1) end
-	if U.logText then
-		U.logText.Text = table.concat(logLines, "\n")
-		task.delay(0.08, function()
-			pcall(function()
-				U.con.CanvasPosition = Vector2.new(0, 100000)
-			end)
-		end)
+CS.log = function(msg)
+	table.insert(CS.Log, os.date("%H:%M:%S") .. "  " .. tostring(msg))
+	while #CS.Log > 40 do table.remove(CS.Log, 1) end
+	if U.console then
+		local first = math.max(1, #CS.Log - 6)
+		U.console.Text = table.concat(CS.Log, "\n", first, #CS.Log)
 	end
 end
 
-local function updateStatus()
-	if U.status then
-		U.status.Text = "Bereit | Safe Mode " .. (cfg.safe and "AN" or "AUS") .. " | Sniper " .. (cfg.sniper and "AN" or "AUS")
-	end
+CS.row = function(height)
+	CS.Order = CS.Order + 1
+	return CS.make("Frame", {
+		Size = UDim2.new(1, 0, 0, height), BackgroundTransparency = 1,
+		BorderSizePixel = 0, LayoutOrder = CS.Order,
+	}, U.content)
 end
 
--- GUI GRUNDGERUEST
-local gui = newGui(999999)
-
--- root = Position/Groesse in echten Pixeln, inner = die sichtbare UI (mit UIScale)
-U.root = mk("Frame", {
-	Position = UDim2.fromOffset(cfg.pos[1], cfg.pos[2]),
-	Size = UDim2.fromOffset(W, H),
-	BackgroundTransparency = 1,
-	BorderSizePixel = 0,
-}, gui)
-
-U.inner = mk("Frame", {
-	Size = UDim2.fromOffset(W, H),
-	BorderSizePixel = 0,
-	ClipsDescendants = true,
-}, U.root)
-reg(U.inner, "BackgroundColor3", "bg")
-corner(U.inner, 14)
-U.sc = mk("UIScale", { Scale = 1 }, U.inner)
-U.stroke = mk("UIStroke", {
-	Thickness = 2,
-	Color = Color3.new(1, 1, 1),
-	Transparency = 0.1,
-	ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-}, U.inner)
-U.grad = mk("UIGradient", { Rotation = 0 }, U.stroke)
-
--- Header
-U.title = mk("TextLabel", {
-	Position = UDim2.fromOffset(12, 4),
-	Size = UDim2.fromOffset(W - 80, 18),
-	BackgroundTransparency = 1,
-	Text = "Code Sniper",
-	TextXAlignment = Enum.TextXAlignment.Left,
-	Font = Enum.Font.GothamBlack,
-	TextSize = 16,
-}, U.inner)
-reg(U.title, "TextColor3", "acc")
-
-U.status = mk("TextLabel", {
-	Position = UDim2.fromOffset(12, 22),
-	Size = UDim2.fromOffset(W - 80, 14),
-	BackgroundTransparency = 1,
-	Text = "",
-	TextXAlignment = Enum.TextXAlignment.Left,
-	Font = Enum.Font.Gotham,
-	TextSize = 10,
-	TextTruncate = Enum.TextTruncate.AtEnd,
-}, U.inner)
-reg(U.status, "TextColor3", "sub")
-
-U.dragH = mk("TextButton", {
-	Size = UDim2.fromOffset(W - 68, HMIN),
-	BackgroundTransparency = 1,
-	Text = "",
-	AutoButtonColor = false,
-	Active = true,
-	ZIndex = 2,
-}, U.inner)
-
-local function hdrBtn(text, x)
-	local b = mk("TextButton", {
-		Text = text,
-		Position = UDim2.fromOffset(x, 8),
-		Size = UDim2.fromOffset(26, 24),
-		Font = Enum.Font.GothamBold,
-		TextSize = 15,
-		AutoButtonColor = false,
-		BorderSizePixel = 0,
-		ZIndex = 3,
-	}, U.inner)
-	corner(b, 8)
-	reg(b, "BackgroundColor3", "btn")
-	reg(b, "TextColor3", "txt")
-	local sc = mk("UIScale", { Scale = 1 }, b)
-	on(b.InputBegan, function(x2)
-		if isPress(x2) then tw(sc, { Scale = 0.85 }, 0.08) end
-	end)
-	on(b.InputEnded, function(x2)
-		if isPress(x2) then tw(sc, { Scale = 1 }, 0.3, Enum.EasingStyle.Back) end
-	end)
-	return b
-end
-U.bMin = hdrBtn("-", W - 62)
-U.bX = hdrBtn("X", W - 32)
-
-U.div = mk("Frame", {
-	Position = UDim2.fromOffset(12, HMIN),
-	Size = UDim2.new(1, -24, 0, 1),
-	BorderSizePixel = 0,
-	BackgroundTransparency = 0.6,
-}, U.inner)
-reg(U.div, "BackgroundColor3", "acc")
-
--- Body (scrollbar)
-U.body = mk("ScrollingFrame", {
-	Position = UDim2.fromOffset(0, HMIN + 4),
-	Size = UDim2.new(1, 0, 1, -(HMIN + 4)),
-	BackgroundTransparency = 1,
-	BorderSizePixel = 0,
-	ScrollBarThickness = 3,
-	CanvasSize = UDim2.new(),
-	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	ScrollingDirection = Enum.ScrollingDirection.Y,
-}, U.inner)
-reg(U.body, "ScrollBarImageColor3", "acc")
-mk("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, U.body)
-mk("UIPadding", {
-	PaddingLeft = UDim.new(0, 10),
-	PaddingRight = UDim.new(0, 12),
-	PaddingTop = UDim.new(0, 4),
-	PaddingBottom = UDim.new(0, 10),
-}, U.body)
-
--- BAUKASTEN FUER ZEILEN
-local function mkRow(h)
-	ord = ord + 1
-	return mk("Frame", {
-		Size = UDim2.new(1, 0, 0, h),
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		LayoutOrder = ord,
-	}, U.body)
-end
-
-local function section(text)
-	local r = mkRow(14)
-	local bar = mk("Frame", {
-		Size = UDim2.fromOffset(3, 10),
-		Position = UDim2.fromOffset(0, 2),
-		BorderSizePixel = 0,
-	}, r)
-	corner(bar, 2)
-	reg(bar, "BackgroundColor3", "acc")
-	local l = mk("TextLabel", {
-		Position = UDim2.fromOffset(9, 0),
-		Size = UDim2.new(1, -9, 1, 0),
-		BackgroundTransparency = 1,
-		Text = text,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Font = Enum.Font.GothamBold,
-		TextSize = 10,
-	}, r)
-	reg(l, "TextColor3", "sub")
-	return r
-end
-
-local function colBtn(parent, i, n, text)
-	local g = 6
-	local b = mk("TextButton", {
-		Text = text,
-		Position = UDim2.new((i - 1) / n, (i - 1) * g / n, 0, 0),
-		Size = UDim2.new(1 / n, -(n - 1) * g / n, 1, 0),
-		Font = Enum.Font.GothamBold,
-		TextSize = 12,
-		TextScaled = true,
-		AutoButtonColor = false,
-		BorderSizePixel = 0,
-	}, parent)
-	corner(b, 9)
-	mk("UITextSizeConstraint", { MaxTextSize = 12, MinTextSize = 8 }, b)
-	mk("UIPadding", { PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4) }, b)
-	reg(b, "BackgroundColor3", "btn")
-	reg(b, "TextColor3", "txt")
-	local sk = mk("UIStroke", { Thickness = 1, Transparency = 0.6, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, b)
-	reg(sk, "Color", "acc")
-	local sc = mk("UIScale", { Scale = 1 }, b)
-	on(b.InputBegan, function(x)
-		if isPress(x) then
-			tw(sc, { Scale = 0.94 }, 0.08)
-			tw(sk, { Transparency = 0, Thickness = 2 }, 0.08)
-		end
-	end)
-	on(b.InputEnded, function(x)
-		if isPress(x) then
-			tw(sc, { Scale = 1 }, 0.3, Enum.EasingStyle.Back)
-			tw(sk, { Transparency = 0.6, Thickness = 1 }, 0.35)
-		end
-	end)
-	return b
-end
-
-local function addToggle(text, key, onChange)
-	local r = mkRow(30)
-	r.BackgroundTransparency = 0
-	r.BorderSizePixel = 0
-	corner(r, 9)
-	reg(r, "BackgroundColor3", "btn")
-	local l = mk("TextLabel", {
-		Position = UDim2.fromOffset(10, 0),
-		Size = UDim2.new(1, -60, 1, 0),
-		BackgroundTransparency = 1,
-		Text = text,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Font = Enum.Font.GothamMedium,
-		TextSize = 12,
+CS.button = function(parent, text, index, count)
+	local gap = 6
+	local btn = CS.make("TextButton", {
+		Text = text, Position = UDim2.new((index - 1) / count, (index - 1) * gap / count, 0, 0),
+		Size = UDim2.new(1 / count, -(count - 1) * gap / count, 1, 0),
+		Font = Enum.Font.GothamBold, TextSize = 13, AutoButtonColor = false, BorderSizePixel = 0,
 		TextTruncate = Enum.TextTruncate.AtEnd,
-	}, r)
-	reg(l, "TextColor3", "txt")
-	local pill = mk("TextButton", {
-		Position = UDim2.new(1, -46, 0.5, -10),
-		Size = UDim2.fromOffset(38, 20),
-		Text = "",
-		AutoButtonColor = false,
-		BorderSizePixel = 0,
-	}, r)
-	corner(pill, 10)
-	local dot = mk("Frame", {
-		Size = UDim2.fromOffset(14, 14),
-		BorderSizePixel = 0,
-	}, pill)
-	corner(dot, 7)
-	local function refresh(anim)
-		local isOn = cfg[key]
-		local pos = isOn and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
-		local col = isOn and T.acc or T.line
-		if anim then
-			tw(pill, { BackgroundColor3 = col }, 0.2)
-			tw(dot, { Position = pos, BackgroundColor3 = T.bg }, 0.25, Enum.EasingStyle.Back)
-		else
-			pill.BackgroundColor3 = col
-			dot.Position = pos
-			dot.BackgroundColor3 = T.bg
-		end
-	end
-	refreshers[#refreshers + 1] = refresh
-	refresh(false)
-	on(pill.MouseButton1Click, function()
-		cfg[key] = not cfg[key]
-		refresh(true)
-		updateStatus()
-		save()
-		onChange(cfg[key])
+	}, parent)
+	CS.make("UICorner", { CornerRadius = UDim.new(0, 9) }, btn)
+	CS.make("UIPadding", { PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4) }, btn)
+	local press = CS.make("UIScale", { Scale = 1 }, btn)
+	CS.on(btn.InputBegan, function(input)
+		if CS.isIn(input) then CS.tw(press, { Scale = 0.94 }, 0.08) end
 	end)
-	return r
+	CS.on(btn.InputEnded, function(input)
+		if CS.isIn(input) then CS.tw(press, { Scale = 1 }, 0.35, Enum.EasingStyle.Back) end
+	end)
+	table.insert(U.small, btn)
+	return btn
 end
 
--- ZEILEN
-addToggle("Sniper (Codes erkennen)", "sniper", function(v)
-	log(v and "ok" or "warn", v and "Sniper AN" or "Sniper AUS")
-end)
+CS.setToggle = function(btn, name, state)
+	local T = CS.Themes[CS.Settings.Theme]
+	btn.Text = name .. ": " .. (state and "AN" or "AUS")
+	CS.tw(btn, { BackgroundColor3 = state and T.accent or T.off }, 0.2)
+	btn.TextColor3 = state and T.bg or T.text
+end
 
-addToggle("Safe Mode (nur simulieren)", "safe", function(v)
-	if v then
-		log("ok", "Safe Mode AN: es wird nur simuliert, nichts echt eingeloest")
-	else
-		log("warn", "Safe Mode AUS: Codes werden echt eingeloest")
+CS.refresh = function()
+	local T = CS.Themes[CS.Settings.Theme]
+	CS.T = T
+	CS.tw(U.main, { BackgroundColor3 = T.bg, BackgroundTransparency = CS.Trans[CS.Settings.Trans] }, 0.3)
+	U.stroke.Color = T.accent
+	U.titleBar.BackgroundColor3 = T.panel
+	U.title.TextColor3 = T.accent
+	U.minBtn.TextColor3 = T.text
+	U.closeBtn.TextColor3 = T.text
+	for _, btn in ipairs(U.small) do
+		btn.BackgroundColor3 = T.panel
+		btn.TextColor3 = T.text
 	end
-end)
-
-section("EINSTELLUNGEN")
-local optRow = mkRow(28)
-U.bTheme = colBtn(optRow, 1, 2, "")
-U.bIntro = colBtn(optRow, 2, 2, "")
-
-section("CONSOLE")
-local conRow = mkRow(110)
-U.con = mk("ScrollingFrame", {
-	Size = UDim2.new(1, 0, 1, 0),
-	BorderSizePixel = 0,
-	Active = true,
-	ScrollBarThickness = 3,
-	CanvasSize = UDim2.new(),
-	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	ScrollingDirection = Enum.ScrollingDirection.Y,
-}, conRow)
-corner(U.con, 8)
-reg(U.con, "BackgroundColor3", "dim")
-reg(U.con, "ScrollBarImageColor3", "acc")
-mk("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, U.con)
-mk("UIPadding", {
-	PaddingLeft = UDim.new(0, 6),
-	PaddingRight = UDim.new(0, 6),
-	PaddingTop = UDim.new(0, 4),
-	PaddingBottom = UDim.new(0, 4),
-}, U.con)
-U.logText = mk("TextLabel", {
-	Size = UDim2.new(1, 0, 0, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
-	BackgroundTransparency = 1,
-	RichText = true,
-	Text = "",
-	TextWrapped = true,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextYAlignment = Enum.TextYAlignment.Top,
-	Font = Enum.Font.Code,
-	TextSize = 11,
-}, U.con)
-reg(U.logText, "TextColor3", "txt")
-
-local clrRow = mkRow(24)
-U.bClear = colBtn(clrRow, 1, 1, "Console leeren")
-
-local linkRow = mkRow(28)
-U.bDisc = colBtn(linkRow, 1, 2, "Discord kopieren")
-U.bStop = colBtn(linkRow, 2, 2, "Beenden")
-
-local footRow = mkRow(14)
-local foot = mk("TextLabel", {
-	Size = UDim2.new(1, 0, 1, 0),
-	BackgroundTransparency = 1,
-	Text = "Code Sniper " .. VERSION .. " | discord.gg/EA7xS26mA9",
-	TextXAlignment = Enum.TextXAlignment.Left,
-	Font = Enum.Font.Gotham,
-	TextSize = 10,
-	TextTruncate = Enum.TextTruncate.AtEnd,
-}, footRow)
-reg(foot, "TextColor3", "sub")
-
--- FLOATING MENU BUTTON
-U.fb = mk("TextButton", {
-	Text = "CS",
-	Size = UDim2.fromOffset(46, 46),
-	Position = UDim2.fromOffset(cfg.mpos[1], cfg.mpos[2]),
-	AutoButtonColor = false,
-	BorderSizePixel = 0,
-	Font = Enum.Font.GothamBlack,
-	TextSize = 16,
-	Visible = false,
-	Active = true,
-	ZIndex = 10,
-}, gui)
-corner(U.fb, 13)
-reg(U.fb, "BackgroundColor3", "bg")
-reg(U.fb, "TextColor3", "acc")
-U.fbSc = mk("UIScale", { Scale = 1 }, U.fb)
-U.fbStroke = mk("UIStroke", {
-	Thickness = 2,
-	Color = Color3.new(1, 1, 1),
-	ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-}, U.fb)
-U.fbGrad = mk("UIGradient", { Rotation = 0 }, U.fbStroke)
-
--- LAYOUT (Skalierung, Minimieren, im Bild halten)
-local function clampRoot(s)
-	local v = viewport()
-	local p = U.root.Position
-	U.root.Position = UDim2.fromOffset(
-		math.clamp(p.X.Offset, -(W * s) + 70, v.X - 70),
-		math.clamp(p.Y.Offset, 0, v.Y - 40)
-	)
+	CS.setToggle(U.safe, "Safe Mode", CS.Settings.SafeMode)
+	CS.setToggle(U.sniper, "Sniper", CS.Settings.Sniper)
+	U.trans.Text = "Opacity: " .. math.floor((1 - CS.Trans[CS.Settings.Trans]) * 100 + 0.5) .. "%"
+	U.size.Text = "Size: " .. CS.ScaleNames[CS.Settings.Scale]
+	U.theme.Text = "Theme: " .. CS.Settings.Theme
+	U.intro.Text = "Intro: " .. (CS.Settings.Intro and "AN" or "AUS")
+	U.console.BackgroundColor3 = T.panel
+	U.console.TextColor3 = T.text
+	for _, entry in ipairs(U.ddItems) do
+		local selected = entry[3] == CS.Settings.Theme
+		CS.tw(entry[2], { Thickness = selected and 3 or 1 }, 0.3)
+	end
+	U.fab.BackgroundColor3 = T.accent
+	U.fab.TextColor3 = T.bg
+	U.fabStroke.Color = T.text
 end
 
-local function layout(anim)
-	local v = viewport()
-	local s = math.clamp(v.Y / 470, 0.72, 1)
-	local h = cfg.min and HMIN or H
-	U.sc.Scale = s
-	U.bMin.Text = cfg.min and "+" or "-"
-	U.layTok = (U.layTok or 0) + 1
-	local tok = U.layTok
-	if anim then
-		if not cfg.min then
-			U.body.Visible = true
-			U.div.Visible = true
+CS.setDD = function(open)
+	CS.ddOpen = open
+	CS.tw(U.dd, { Size = UDim2.new(1, 0, 0, open and (#CS.ThemeOrder * 30) or 0) }, open and 0.5 or 0.3)
+	for i, entry in ipairs(U.ddItems) do
+		local item, stroke = entry[1], entry[2]
+		if open then
+			item.BackgroundTransparency = 1
+			item.TextTransparency = 1
+			stroke.Transparency = 1
 		end
-		tw(U.inner, { Size = UDim2.fromOffset(W, h) }, 0.35)
-		tw(U.root, { Size = UDim2.fromOffset(W * s, h * s) }, 0.35)
-		task.delay(0.38, function()
-			if tok ~= U.layTok then return end
-			U.body.Visible = not cfg.min
-			U.div.Visible = not cfg.min
-			clampRoot(s)
+		task.delay(open and i * 0.05 or 0, function()
+			if not CS.Running then return end
+			local value = open and 0 or 1
+			CS.tw(item, { BackgroundTransparency = value, TextTransparency = value }, 0.3)
+			CS.tw(stroke, { Transparency = value }, 0.3)
 		end)
-	else
-		U.inner.Size = UDim2.fromOffset(W, h)
-		U.root.Size = UDim2.fromOffset(W * s, h * s)
-		U.body.Visible = not cfg.min
-		U.div.Visible = not cfg.min
-		clampRoot(s)
 	end
 end
 
-local function setOpen(open, anim)
-	U.openTok = (U.openTok or 0) + 1
-	local tok = U.openTok
+CS.drag = function(handle, target, onTap)
+	local dragging, moved, startPoint, startPos = false, false, nil, nil
+	CS.on(handle.InputBegan, function(input)
+		if CS.isIn(input) then
+			dragging, moved = true, false
+			startPoint, startPos = input.Position, target.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+					if onTap and not moved then onTap() end
+				end
+			end)
+		end
+	end)
+	CS.on(S.UIS.InputChanged, function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - startPoint
+			if delta.Magnitude > 6 then moved = true end
+			if moved then
+				target.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+			end
+		end
+	end)
+end
+
+CS.setOpen = function(open)
+	CS.Open = open
+	CS.Token = CS.Token + 1
+	local myToken = CS.Token
+	local base = CS.Scales[CS.Settings.Scale]
 	if open then
-		U.fb.Visible = false
-		U.root.Visible = true
-		layout(false)
-		if anim then
-			local s = U.sc.Scale
-			U.sc.Scale = s * 0.85
-			U.inner.BackgroundTransparency = 0.6
-			tw(U.sc, { Scale = s }, 0.4, Enum.EasingStyle.Back)
-			tw(U.inner, { BackgroundTransparency = 0 }, 0.3)
-		end
+		U.fab.Visible = false
+		U.main.Visible = true
+		U.scale.Scale = base * 0.85
+		CS.tw(U.scale, { Scale = base }, 0.28, Enum.EasingStyle.Back)
 	else
-		U.fb.Visible = true
-		U.fbSc.Scale = 0
-		tw(U.fbSc, { Scale = 1 }, 0.45, Enum.EasingStyle.Back)
-		if anim then
-			local s = U.sc.Scale
-			tw(U.sc, { Scale = s * 0.85 }, 0.2)
-			tw(U.inner, { BackgroundTransparency = 0.6 }, 0.2)
-			task.delay(0.22, function()
-				if tok ~= U.openTok then return end
-				U.root.Visible = false
-				U.sc.Scale = s
-				U.inner.BackgroundTransparency = 0
-			end)
-		else
-			U.root.Visible = false
-		end
-	end
-end
-
--- ZIEHEN (Fenster + Floating Button)
-local function makeDrag(handle, target, onTap, onSave)
-	local dIn, dStart, dBase = nil, nil, nil
-	local moved = false
-	on(handle.InputBegan, function(i)
-		if isPress(i) then
-			dIn = i
-			dStart = i.Position
-			dBase = target.Position
-			moved = false
-		end
-	end)
-	on(UIS.InputChanged, function(i)
-		if not dIn then return end
-		if dIn.UserInputState == Enum.UserInputState.End or dIn.UserInputState == Enum.UserInputState.Cancel then
-			dIn = nil
-			return
-		end
-		local ok = (i == dIn) or (i.UserInputType == Enum.UserInputType.MouseMovement and dIn.UserInputType == Enum.UserInputType.MouseButton1)
-		if not ok then return end
-		local d = i.Position - dStart
-		if not moved and d.Magnitude < 8 then return end
-		moved = true
-		local v = viewport()
-		local sz = target.AbsoluteSize
-		target.Position = UDim2.fromOffset(
-			math.clamp(dBase.X.Offset + d.X, -sz.X + 70, v.X - 70),
-			math.clamp(dBase.Y.Offset + d.Y, 0, v.Y - 40)
-		)
-	end)
-	on(UIS.InputEnded, function(i)
-		if dIn and (i == dIn or i.UserInputType == dIn.UserInputType) then
-			local wasMoved = moved
-			dIn = nil
-			if wasMoved then
-				if onSave then onSave() end
-			elseif onTap then
-				onTap()
+		CS.tw(U.scale, { Scale = base * 0.85 }, 0.18)
+		task.delay(0.18, function()
+			if CS.Running and CS.Token == myToken then
+				U.main.Visible = false
+				U.fab.Visible = true
 			end
-		end
-	end)
-end
-
-makeDrag(U.dragH, U.root, nil, function()
-	local p = U.root.Position
-	cfg.pos = { p.X.Offset, p.Y.Offset }
-	save()
-end)
-
-makeDrag(U.fb, U.fb, function()
-	setOpen(true, true)
-end, function()
-	local p = U.fb.Position
-	cfg.mpos = { p.X.Offset, p.Y.Offset }
-	save()
-end)
-
--- INTRO (Download in den Ordner + Animation)
-local I = { busy = {}, active = nil, tok = 0 }
-
-do
-	local DIR = "CodeSniper"
-	local MDIR = "CodeSniper/music"
-	local URLS = {
-		[1] = "https://files.catbox.moe/8a03lo.ogg",
-		[2] = "https://files.catbox.moe/jniftl.ogg",
-	}
-	-- Zeitplan: { Zeit in s, Staerke, Art }  a = CODE knallt rein, b = SNIPER knallt rein
-	local SCH = {
-		[1] = {
-			dur = 5.06, f0 = 4.95, f1 = 5.5, line = 0.84, sub = 3.15,
-			beats = {
-				{ 0.05, 1, "a" }, { 0.52, 1, "b" }, { 0.84, 0.6 }, { 1.28, 0.9 }, { 1.58, 0.5 },
-				{ 1.88, 0.9 }, { 2.11, 0.6 }, { 2.48, 2.2, "drop" }, { 3.15, 1 }, { 3.74, 1 },
-				{ 4.34, 1.2 }, { 4.75, 1.7, "end" },
-			},
-		},
-		[2] = {
-			dur = 7.73, f0 = 7.25, f1 = 7.73, line = 1.05, sub = 1.58,
-			beats = {
-				{ 0.48, 0.7, "a" }, { 0.8, 0.4 }, { 1.05, 0.8, "b" }, { 1.3, 0.5 }, { 1.58, 2.4, "drop" },
-				{ 2.12, 1.3 }, { 2.68, 1.0 }, { 3.23, 1.3 }, { 3.78, 1.0 }, { 4.33, 1.4 },
-				{ 4.88, 1.0 }, { 5.42, 1.3 }, { 5.97, 1.0 }, { 6.52, 1.5 }, { 7.07, 2.0, "end" },
-			},
-		},
-	}
-	local LET = { "C", "O", "D", "E", "S", "N", "I", "P", "E", "R" }
-
-	pcall(makefolder, DIR)
-	pcall(makefolder, MDIR)
-
-	local function pathOf(n)
-		return MDIR .. "/intro" .. n .. ".ogg"
-	end
-
-	local function isOgg(b)
-		return type(b) == "string" and #b > 1000 and b:sub(1, 4) == "OggS"
-	end
-
-	local function download(url)
-		local why = "keine Antwort"
-		local rq = request or http_request or (syn and syn.request)
-		if rq then
-			local ok, r = pcall(rq, { Url = url, Method = "GET" })
-			if ok and type(r) == "table" then
-				if isOgg(r.Body) then return r.Body end
-				why = "HTTP " .. tostring(r.StatusCode) .. ", " .. tostring(type(r.Body) == "string" and #r.Body or 0) .. " Bytes"
-			else
-				why = "request fehlgeschlagen"
-			end
-		end
-		local ok2, b = pcall(function()
-			return game:HttpGet(url)
-		end)
-		if ok2 and isOgg(b) then return b end
-		return nil, why
-	end
-
-	local function have(p)
-		local ok, b = pcall(readfile, p)
-		return ok and isOgg(b)
-	end
-
-	-- stellt sicher, dass die Datei lokal da ist. gibt den Pfad zurueck oder nil
-	function I.ensure(n)
-		local p = pathOf(n)
-		local w = os.clock()
-		while I.busy[n] and os.clock() - w < 30 do
-			task.wait(0.1)
-		end
-		if have(p) then return p end
-		if not (writefile and readfile) then
-			log("err", "Intro: Executor kann keine Dateien speichern")
-			return nil
-		end
-		I.busy[n] = true
-		log("info", "Intro " .. n .. ": lade Song herunter ...")
-		local data, why
-		for _ = 1, 3 do
-			data, why = download(URLS[n])
-			if data then break end
-			task.wait(1)
-		end
-		if data then
-			local okw = pcall(writefile, p, data)
-			if not okw then
-				data = nil
-				why = "Datei konnte nicht gespeichert werden"
-			end
-		end
-		I.busy[n] = false
-		if data and have(p) then
-			log("ok", "Intro " .. n .. " bereit (" .. math.floor(#data / 1024) .. " KB)")
-			return p
-		end
-		log("err", "Intro " .. n .. ": Download fehlgeschlagen (" .. tostring(why) .. ")")
-		return nil
-	end
-
-	function I.stop()
-		if I.active then
-			pcall(I.active.finish)
-		end
-	end
-
-	local function introFx(snd, n)
-		local sch = SCH[n]
-		local k = 1
-		if n == 1 and snd then
-			local okL, len = pcall(function()
-				return snd.TimeLength
-			end)
-			if okL and type(len) == "number" and len > 0.5 then k = len / sch.dur end
-		end
-		local beats = {}
-		for i, b in ipairs(sch.beats) do
-			beats[i] = { b[1] * k, b[2], b[3] }
-		end
-		local f0, f1 = sch.f0 * k, sch.f1 * k
-		local lineT, subT = sch.line * k, sch.sub * k
-
-		local ig = newGui(1000000)
-		local vp = viewport()
-		local base = math.clamp(math.min(vp.X * 0.8 / 470, vp.Y * 0.45 / 100), 0.5, 2.6)
-		local bg = mk("Frame", {
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = T.bg,
-			BackgroundTransparency = 1,
-			BorderSizePixel = 0,
-		}, ig)
-		local stage = mk("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			BorderSizePixel = 0,
-		}, ig)
-		local sc = mk("UIScale", { Scale = base }, stage)
-
-		local L = {}
-		for i, ch in ipairs(LET) do
-			local x = -235 + 22 + (i - 1) * 44 + (i >= 5 and 30 or 0)
-			local w = mk("Frame", {
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.new(0.5, x, 0.5, -10),
-				Size = UDim2.fromOffset(44, 76),
-				BackgroundTransparency = 1,
-				BorderSizePixel = 0,
-			}, stage)
-			local us = mk("UIScale", { Scale = 1 }, w)
-			local lb = mk("TextLabel", {
-				Size = UDim2.fromScale(1, 1),
-				BackgroundTransparency = 1,
-				Text = ch,
-				Font = Enum.Font.GothamBlack,
-				TextSize = 66,
-				TextColor3 = T.acc,
-				TextTransparency = 1,
-			}, w)
-			L[i] = { w = w, us = us, lb = lb, x = x, hit = -10, amp = 0, rev = math.huge }
-		end
-
-		local line = mk("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.new(0.5, 0, 0.5, 52),
-			Size = UDim2.fromOffset(0, 4),
-			BackgroundColor3 = T.acc,
-			BorderSizePixel = 0,
-		}, stage)
-		local sub = mk("TextLabel", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.new(0.5, 0, 0.5, 80),
-			Size = UDim2.fromOffset(470, 22),
-			BackgroundTransparency = 1,
-			Text = "Steal a Brainrot  |  Code Sniper",
-			Font = Enum.Font.GothamBold,
-			TextSize = 16,
-			TextColor3 = T.sub,
-			TextTransparency = 1,
-		}, stage)
-		local fl = mk("Frame", {
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = T.acc,
-			BackgroundTransparency = 1,
-			BorderSizePixel = 0,
-			ZIndex = 5,
-		}, ig)
-		local skip = mk("TextButton", {
-			AnchorPoint = Vector2.new(1, 0),
-			Position = UDim2.new(1, -14, 0, 14),
-			Size = UDim2.fromOffset(78, 32),
-			BackgroundColor3 = T.btn,
-			Text = "Skip",
-			TextColor3 = T.txt,
-			Font = Enum.Font.GothamBold,
-			TextSize = 14,
-			AutoButtonColor = false,
-			BorderSizePixel = 0,
-			ZIndex = 10,
-		}, ig)
-		corner(skip, 9)
-		mk("UIStroke", { Color = T.acc, Thickness = 1, Transparency = 0.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, skip)
-
-		local function spark(cnt, wide)
-			for _ = 1, cnt do
-				local a = math.random() * math.pi * 2
-				local d = (wide and 260 or 130) * (0.4 + math.random() * 0.8)
-				local sx = L[math.random(1, #L)].x
-				local p = mk("Frame", {
-					AnchorPoint = Vector2.new(0.5, 0.5),
-					Position = UDim2.new(0.5, sx, 0.5, -10),
-					Size = UDim2.fromOffset(6, 6),
-					Rotation = math.random(0, 90),
-					BackgroundColor3 = T.acc,
-					BorderSizePixel = 0,
-				}, stage)
-				tw(p, {
-					Position = UDim2.new(0.5, sx + math.cos(a) * d, 0.5, -10 + math.sin(a) * d),
-					BackgroundTransparency = 1,
-					Size = UDim2.fromOffset(2, 2),
-				}, 0.55)
-				task.delay(0.6, function()
-					pcall(function()
-						p:Destroy()
-					end)
-				end)
-			end
-		end
-
-		local function ring(th)
-			local r = mk("Frame", {
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.new(0.5, 0, 0.5, -10),
-				Size = UDim2.fromOffset(40, 40),
-				BackgroundTransparency = 1,
-				BorderSizePixel = 0,
-			}, stage)
-			corner(r, 400)
-			local sk = mk("UIStroke", { Thickness = th, Color = T.acc }, r)
-			tw(r, { Size = UDim2.fromOffset(820, 820) }, 0.7)
-			tw(sk, { Transparency = 1 }, 0.7)
-			task.delay(0.8, function()
-				pcall(function()
-					r:Destroy()
-				end)
-			end)
-		end
-
-		local tl, bi = 0, 1
-		local pulse, shake, flashA = 0, 0, 0
-		local ul, subA = 0, 0
-		local t0 = os.clock()
-		local done = false
-		local hb
-
-		local function finish()
-			if done then return end
-			done = true
-			if hb then
-				pcall(function()
-					hb:Disconnect()
-				end)
-			end
-			if snd then
-				pcall(function()
-					snd:Stop()
-					snd:Destroy()
-				end)
-			end
-			pcall(function()
-				ig:Destroy()
-			end)
-			if I.active and I.active.ig == ig then I.active = nil end
-		end
-		I.active = { ig = ig, finish = finish }
-
-		skip.MouseButton1Click:Connect(finish)
-
-		local function fire(b)
-			local s, kind = b[2], b[3]
-			pulse = math.max(pulse, 0.05 + 0.06 * s)
-			shake = math.max(shake, 6 * s)
-			flashA = math.max(flashA, math.min(0.1 * s, 0.35))
-			local a, z, amp = 1, #L, 0.3 * s
-			if kind == "a" then
-				a, z, amp = 1, 4, 1.6
-			elseif kind == "b" then
-				a, z, amp = 5, 10, 1.6
-			end
-			for i = a, z do
-				local e = L[i]
-				e.hit = tl + (i - a) * 0.035
-				e.amp = amp
-				if amp > 1 then e.rev = e.hit end
-			end
-			if kind == "drop" then
-				pulse = 0.35
-				shake = 26
-				flashA = 0.75
-				ring(6)
-				task.delay(0.12, function()
-					ring(3)
-				end)
-				spark(24, true)
-			elseif kind == "end" then
-				pulse = 0.3
-				shake = 20
-				flashA = 0.6
-				ring(5)
-				spark(18, true)
-			else
-				if s >= 1.2 then ring(2) end
-				spark(math.floor(4 * s) + 2, false)
-			end
-		end
-
-		local function step(dt)
-			if snd and snd.Parent and snd.IsPlaying then
-				tl = snd.TimePosition
-			else
-				tl = tl + dt
-			end
-			while beats[bi] and tl >= beats[bi][1] do
-				fire(beats[bi])
-				bi = bi + 1
-			end
-			local f = math.clamp((tl - f0) / (f1 - f0), 0, 1)
-			local el = os.clock() - t0
-			local fadeIn = math.clamp(el / 0.3, 0, 1)
-			pulse = pulse * math.exp(-dt * 7)
-			shake = shake * math.exp(-dt * 9)
-			flashA = flashA * math.exp(-dt * 8)
-			local sh = shake > 0.3 and shake or 0
-			stage.Position = UDim2.new(0.5, (math.random() - 0.5) * 2 * sh, 0.5, (math.random() - 0.5) * 2 * sh)
-			stage.Rotation = (math.random() - 0.5) * 0.3 * sh
-			sc.Scale = base * (1 + pulse) * (1 + f * 0.5)
-			fl.BackgroundTransparency = 1 - flashA
-			bg.BackgroundColor3 = T.bg:Lerp(T.acc, math.clamp(flashA * 0.35, 0, 0.3))
-			bg.BackgroundTransparency = math.max(1 - fadeIn, f)
-			for i, e in ipairs(L) do
-				local age = tl - e.hit
-				e.lb.TextTransparency = (tl >= e.rev) and f or 1
-				local d = age >= 0 and math.exp(-age * 5.5) or 0
-				e.w.Position = UDim2.new(0.5, e.x, 0.5, -10 - (age >= 0 and math.abs(math.sin(age * 12)) * 22 * d or 0))
-				e.w.Rotation = age >= 0 and math.sin(age * 10) * 7 * d * (i % 2 == 0 and 1 or -1) or 0
-				e.us.Scale = 1 + (age >= 0 and e.amp * math.exp(-age * 8) or 0)
-			end
-			if tl >= lineT then ul = math.min(1, ul + dt * 3.5) end
-			line.Size = UDim2.fromOffset(470 * ul, 4)
-			line.BackgroundTransparency = f
-			if tl >= subT then subA = math.min(1, subA + dt * 5) end
-			sub.TextTransparency = math.max(1 - subA, f)
-			skip.BackgroundTransparency = math.max(1 - fadeIn, f)
-			skip.TextTransparency = math.max(1 - fadeIn, f)
-			if tl >= f1 or el > sch.dur * k + 8 then finish() end
-		end
-
-		hb = RunService.Heartbeat:Connect(function(dt)
-			if done then return end
-			if not alive then
-				finish()
-				return
-			end
-			local ok = pcall(step, dt)
-			if not ok then finish() end
 		end)
 	end
+end
 
-	-- spielt Intro n (laedt den Song vorher, falls noetig)
-	function I.play(n)
-		I.stop()
-		I.tok = I.tok + 1
-		local my = I.tok
-		local p = I.ensure(n)
-		if my ~= I.tok or not alive then return end
-		local snd
-		local gca = getcustomasset or getsynasset
-		if p and gca then
-			local ok, id = pcall(gca, p)
-			if ok and id then
-				snd = Instance.new("Sound")
-				snd.Volume = 0.6
-				snd.Looped = false
-				snd.SoundId = id
-				snd.Parent = game:GetService("SoundService")
-				snd.Ended:Connect(function()
-					pcall(function()
-						snd:Destroy()
-					end)
-				end)
-				snd:Play()
-				local w = os.clock()
-				while snd.Parent and not snd.IsPlaying and os.clock() - w < 8 do
-					task.wait(0.05)
-				end
-				if not snd.IsPlaying then
-					log("err", "Intro " .. n .. ": Song laesst sich nicht abspielen")
-					pcall(function()
-						snd:Destroy()
-					end)
-					snd = nil
-				end
-			else
-				log("err", "Intro: getcustomasset hat nicht geklappt")
-			end
-		elseif p then
-			log("warn", "Dieser Executor kann keine Audio-Dateien laden (getcustomasset fehlt)")
-		end
-		if my ~= I.tok or not alive then
-			if snd then
-				pcall(function()
-					snd:Destroy()
-				end)
-			end
-			return
-		end
-		local okFx, err = pcall(introFx, snd, n)
-		if not okFx then
-			log("err", "Intro-Fehler: " .. tostring(err))
-			if snd then
-				pcall(function()
-					snd:Destroy()
-				end)
-			end
+-- Intro (1:1 aus Shox Hub)
+CS.introFx = function(snd)
+	local T = CS.T
+	local mk, tw, RS = CS.make, CS.tw, S.RS
+	local ig = mk("ScreenGui", { ResetOnSpawn = false, IgnoreGuiInset = true, Name = CS.rname(), DisplayOrder = 999 }, CS.getParent())
+	pcall(function() if syn and syn.protect_gui then syn.protect_gui(ig) end end)
+	CS.introG = ig
+	local vp = workspace.CurrentCamera.ViewportSize
+	local base = math.clamp(math.min(vp.X * 0.6 / 376, vp.Y * 0.4 / 80), 0.5, 3)
+	local bg = mk("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = T.bg, BorderSizePixel = 0 }, ig)
+	local stage = mk("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0 }, ig)
+	local sc = mk("UIScale", { Scale = base }, stage)
+	local L = {}
+	for i, ch in ipairs(CS.LET) do
+		local x = -163 + (i - 1) * 50 + (i >= 5 and 26 or 0)
+		local w = mk("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, x, 0.5, -10), Size = UDim2.fromOffset(50, 80), BackgroundTransparency = 1, BorderSizePixel = 0 }, stage)
+		local us = mk("UIScale", { Scale = 1 }, w)
+		local lb = mk("TextLabel", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = ch, Font = Enum.Font.GothamBlack, TextSize = 76, TextColor3 = T.accent, TextTransparency = 1 }, w)
+		L[i] = { w = w, us = us, lb = lb, x = x, hit = -10, amp = 0, rev = math.huge }
+	end
+	local line = mk("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 52), Size = UDim2.fromOffset(0, 4), BackgroundColor3 = T.accent, BorderSizePixel = 0 }, stage)
+	local sub = mk("TextLabel", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 80), Size = UDim2.fromOffset(376, 22), BackgroundTransparency = 1, Text = CS.Discord, Font = Enum.Font.GothamBold, TextSize = 17, TextColor3 = T.sub, TextTransparency = 1 }, stage)
+	local fl = mk("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = T.accent, BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 5 }, ig)
+	local skip = mk("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 14), Size = UDim2.fromOffset(78, 32), BackgroundColor3 = T.panel, Text = "Skip", TextColor3 = T.text, Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false, BorderSizePixel = 0, ZIndex = 10 }, ig)
+	mk("UICorner", { CornerRadius = UDim.new(0, 9) }, skip)
+	local skS = mk("UIStroke", { Color = T.accent, Thickness = 1, Transparency = 0.55, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, skip)
+	local skU = mk("UIScale", { Scale = 1 }, skip)
+	CS.on(skip.InputBegan, function(x) if CS.isIn(x) then tw(skU, { Scale = 0.93 }, 0.08) end end)
+	CS.on(skip.InputEnded, function(x) if CS.isIn(x) then tw(skU, { Scale = 1 }, 0.3, Enum.EasingStyle.Back) end end)
+	local function spark(n, wide)
+		for _ = 1, n do
+			local a = math.random() * math.pi * 2
+			local d = (wide and 260 or 130) * (0.4 + math.random() * 0.8)
+			local sx = L[math.random(1, #L)].x
+			local p = mk("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, sx, 0.5, -10), Size = UDim2.fromOffset(6, 6), Rotation = math.random(0, 90), BackgroundColor3 = T.accent, BorderSizePixel = 0 }, stage)
+			tw(p, { Position = UDim2.new(0.5, sx + math.cos(a) * d, 0.5, -10 + math.sin(a) * d), BackgroundTransparency = 1, Size = UDim2.fromOffset(2, 2) }, 0.55)
+			task.delay(0.6, function() p:Destroy() end)
 		end
 	end
-end
-
--- THEMES
-local function updateTexts()
-	U.bTheme.Text = "Theme: " .. cfg.theme
-	U.bIntro.Text = "Intro: " .. INTRO_NAMES[cfg.intro]
-end
-
-local function setGrad()
-	local seq = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, T.acc),
-		ColorSequenceKeypoint.new(0.5, T.acc:Lerp(T.bg, 0.75)),
-		ColorSequenceKeypoint.new(1, T.acc),
-	})
-	U.grad.Color = seq
-	U.fbGrad.Color = seq
-end
-
-local function applyTheme(name, quick)
-	if not THEMES[name] then return end
-	T = THEMES[name]
-	cfg.theme = name
-	for _, e in ipairs(themed) do
-		if quick then
-			pcall(function()
-				e[1][e[2]] = T[e[3]]
-			end)
+	local function ring(th)
+		local r = mk("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, -10), Size = UDim2.fromOffset(40, 40), BackgroundTransparency = 1, BorderSizePixel = 0 }, stage)
+		mk("UICorner", { CornerRadius = UDim.new(1, 0) }, r)
+		local sk = mk("UIStroke", { Thickness = th, Color = T.accent }, r)
+		tw(r, { Size = UDim2.fromOffset(820, 820) }, 0.7)
+		tw(sk, { Transparency = 1 }, 0.7)
+		task.delay(0.8, function() r:Destroy() end)
+	end
+	local tl, bi, pulse, shake, flashA, ul, subA = 0, 1, 0, 0, 0, 0, 0
+	local done, hb = false, nil
+	local function finish(stop)
+		if done then return end
+		done = true
+		if hb then hb:Disconnect() end
+		if stop then
+			pcall(function() snd:Stop() snd:Destroy() end)
+			if CS.introS == snd then CS.introS = nil end
+		end
+		if CS.introG == ig then CS.introG = nil end
+		ig:Destroy()
+	end
+	CS.on(skip.MouseButton1Click, function() finish(true) end)
+	local function fire(b)
+		local s, kind = b[2], b[3]
+		pulse = math.max(pulse, 0.05 + 0.06 * s)
+		shake = math.max(shake, 6 * s)
+		flashA = math.max(flashA, math.min(0.1 * s, 0.35))
+		local a, z, amp = 1, #L, 0.3 * s
+		if kind == "a" then a, z, amp = 1, 4, 1.6 elseif kind == "b" then a, z, amp = 5, 7, 1.6 end
+		for i = a, z do
+			local e = L[i]
+			e.hit = tl + (i - a) * 0.035
+			e.amp = amp
+			if amp > 1 then e.rev = e.hit end
+		end
+		if kind == "drop" then
+			pulse = 0.35 shake = 26 flashA = 0.75
+			ring(6) task.delay(0.12, function() ring(3) end)
+			spark(24, true)
+		elseif kind == "end" then
+			pulse = 0.3 shake = 20 flashA = 0.6
+			ring(5) spark(18, true)
 		else
-			tw(e[1], { [e[2]] = T[e[3]] }, 0.4)
+			spark(math.floor(4 * s) + 2, false)
 		end
 	end
-	for _, f in ipairs(refreshers) do
-		pcall(f, not quick)
-	end
-	setGrad()
-	updateTexts()
-	if not quick then save() end
+	hb = CS.on(RS.Heartbeat, function(dt)
+		if done then return end
+		if snd.IsPlaying then tl = snd.TimePosition else tl += dt end
+		while CS.BEATS[bi] and tl >= CS.BEATS[bi][1] do fire(CS.BEATS[bi]) bi += 1 end
+		local f = math.clamp((tl - CS.FADE0) / (CS.FADE1 - CS.FADE0), 0, 1)
+		pulse *= math.exp(-dt * 7) shake *= math.exp(-dt * 9) flashA *= math.exp(-dt * 8)
+		local sh = shake > 0.3 and shake or 0
+		stage.Position = UDim2.new(0.5, (math.random() - 0.5) * 2 * sh, 0.5, (math.random() - 0.5) * 2 * sh)
+		stage.Rotation = (math.random() - 0.5) * 0.3 * sh
+		sc.Scale = base * (1 + pulse) * (1 + f * 0.5)
+		fl.BackgroundTransparency = 1 - flashA
+		bg.BackgroundTransparency = f
+		for i, e in ipairs(L) do
+			local age = tl - e.hit
+			e.lb.TextTransparency = (tl >= e.rev) and f or 1
+			local d = age >= 0 and math.exp(-age * 5.5) or 0
+			e.w.Position = UDim2.new(0.5, e.x, 0.5, -10 - (age >= 0 and math.abs(math.sin(age * 12)) * 22 * d or 0))
+			e.w.Rotation = age >= 0 and math.sin(age * 10) * 7 * d * (i % 2 == 0 and 1 or -1) or 0
+			e.us.Scale = 1 + (age >= 0 and e.amp * math.exp(-age * 8) or 0)
+		end
+		if tl >= 0.84 then ul = math.min(1, ul + dt * 3.5) end
+		line.Size = UDim2.fromOffset(376 * ul, 4)
+		line.BackgroundTransparency = f
+		if tl >= 3.15 then subA = math.min(1, subA + dt * 5) end
+		sub.TextTransparency = math.max(1 - subA, f)
+		skip.BackgroundTransparency = f
+		skip.TextTransparency = f
+		skS.Transparency = math.max(0.55, f)
+		if tl >= CS.FADE1 then finish(false) end
+	end)
 end
 
--- BUTTON-AKTIONEN
-on(U.bTheme.MouseButton1Click, function()
-	local idx = 1
-	for n, name in ipairs(THEME_ORDER) do
-		if name == cfg.theme then idx = n end
+CS.findIntro = function()
+	for _, ext in ipairs({ "ogg", "mp3" }) do
+		local path = CS.MusicDir .. "/intro." .. ext
+		local ok, exists = pcall(isfile, path)
+		if ok and exists then return path end
 	end
-	local nextName = THEME_ORDER[idx % #THEME_ORDER + 1]
-	applyTheme(nextName, false)
-	log("info", "Theme: " .. nextName)
-end)
+	for _, dir in ipairs({ CS.MusicDir, CS.Dir }) do
+		local ok, list = pcall(listfiles, dir)
+		if ok and type(list) == "table" then
+			local first
+			for _, f in ipairs(list) do
+				local ext = f:match("%.(%w+)$")
+				ext = ext and ext:lower()
+				if ext == "mp3" or ext == "ogg" then
+					if f:lower():find("intro", 1, true) then return f end
+					first = first or f
+				end
+			end
+			if first then return first end
+		end
+	end
+end
 
-on(U.bIntro.MouseButton1Click, function()
-	cfg.intro = INTRO_NEXT[cfg.intro]
-	updateTexts()
-	save()
-	if cfg.intro == 0 then
-		I.stop()
-		log("info", "Intro: Aus")
+CS.playIntro = function()
+	if not CS.Settings.Intro or CS.introG then return end
+	if not (listfiles and getcustomasset) then CS.log("Intro: listfiles/getcustomasset fehlt") return end
+	local f = CS.findIntro()
+	if not f then CS.log("Intro: keine Datei in " .. CS.MusicDir) return end
+	local ok, id = pcall(getcustomasset, f)
+	if not ok or not id then CS.log("Intro: Ladefehler") return end
+	local s = Instance.new("Sound")
+	s.Volume = 0.6 s.SoundId = id s.Looped = false
+	s.Parent = S.Sound
+	CS.introS = s
+	CS.on(s.Ended, function()
+		if CS.introS == s then CS.introS = nil end
+		s:Destroy()
+	end)
+	s:Play()
+	local waited = os.clock()
+	while CS.Running and s.Parent and not s.IsPlaying and os.clock() - waited < 8 do task.wait(0.05) end
+	if not CS.Running or not CS.Settings.Intro then return end
+	if not s.IsPlaying and not s.IsLoaded then
+		s:Destroy()
+		if CS.introS == s then CS.introS = nil end
+		CS.log("Intro: Laden fehlgeschlagen (Format?)")
+		return
+	end
+	CS.introFx(s)
+end
+
+CS.audioExt = function(body)
+	if type(body) ~= "string" or #body < 1000 then return nil end
+	local head = body:sub(1, 4)
+	if head == "OggS" then return "ogg" end
+	if head:sub(1, 3) == "ID3" or body:byte(1) == 255 then return "mp3" end
+end
+
+CS.download = function(url)
+	local rq = request or http_request or (syn and syn.request)
+	if rq then
+		local ok, r = pcall(rq, { Url = url, Method = "GET" })
+		if ok and type(r) == "table" then
+			CS.log("request status=" .. tostring(r.StatusCode) .. " len=" .. tostring(type(r.Body) == "string" and #r.Body or "-"))
+			local ext = CS.audioExt(r.Body)
+			if ext then return r.Body, ext end
+		else
+			CS.log("request Fehler: " .. tostring(r))
+		end
 	else
-		log("info", "Intro-Auswahl: " .. INTRO_NAMES[cfg.intro] .. " (Vorschau laeuft)")
-		task.spawn(I.play, cfg.intro)
+		CS.log("keine request-Funktion")
 	end
-end)
-
-on(U.bClear.MouseButton1Click, function()
-	logLines = {}
-	U.logText.Text = ""
-end)
-
-on(U.bDisc.MouseButton1Click, function()
-	local ok = false
-	if setclipboard then
-		ok = pcall(setclipboard, DISCORD)
-	end
+	local ok, body = pcall(function() return game:HttpGet(url) end)
 	if ok then
-		log("ok", "Discord-Link kopiert: " .. DISCORD)
+		CS.log("HttpGet len=" .. tostring(type(body) == "string" and #body or "-"))
+		local ext = CS.audioExt(body)
+		if ext then return body, ext end
 	else
-		log("warn", "Kopieren geht hier nicht. Link: " .. DISCORD)
+		CS.log("HttpGet Fehler: " .. tostring(body))
 	end
-end)
+end
 
-on(U.bMin.MouseButton1Click, function()
-	cfg.min = not cfg.min
-	layout(true)
-	save()
-end)
-
-on(U.bX.MouseButton1Click, function()
-	setOpen(false, true)
-end)
-
--- RAHMEN-ANIMATION
-local rot = 0
-on(RunService.Heartbeat, function(dt)
-	rot = (rot + dt * 60) % 360
-	U.grad.Rotation = rot
-	U.fbGrad.Rotation = rot
-end)
-
--- STOPPEN
-G.CodeSniperStop = function()
-	alive = false
-	saveNow()
-	pcall(I.stop)
-	for _, c in ipairs(conns) do
-		pcall(function()
-			c:Disconnect()
-		end)
+CS.ensureIntro = function()
+	if not CS.Settings.Intro then return end
+	if not (writefile and listfiles and getcustomasset) then CS.log("Executor ohne writefile/listfiles/getcustomasset") return end
+	if CS.findIntro() then return end
+	CS.log("Intro: lade Song herunter")
+	local data, ext
+	for n, url in ipairs({ CS.IntroUrl, CS.IntroUrl2 }) do
+		if url ~= "" then
+			CS.log("Versuch url" .. n)
+			data, ext = CS.download(url)
+			if data then CS.log("url" .. n .. " ok, " .. #data .. " Bytes") break end
+		end
 	end
-	pcall(function()
-		gui:Destroy()
+	if not data then CS.log("Intro: Download fehlgeschlagen") return end
+	local path = CS.MusicDir .. "/intro." .. ext
+	local okWrite, err = pcall(writefile, path, data)
+	if not okWrite then CS.log("Intro: Speichern fehlgeschlagen: " .. tostring(err)) return end
+	CS.log("Intro gespeichert: " .. path)
+end
+
+CS.stopIntro = function()
+	pcall(function() if CS.introS then CS.introS:Stop() CS.introS:Destroy() end end)
+	pcall(function() if CS.introG then CS.introG:Destroy() end end)
+	CS.introS, CS.introG = nil, nil
+end
+
+CS.stop = function()
+	if not CS.Running then return end
+	CS.Running = false
+	pcall(CS.save)
+	CS.stopIntro()
+	for _, conn in ipairs(CS.Conn) do pcall(function() conn:Disconnect() end) end
+	pcall(function() U.gui:Destroy() end)
+	env.CodeSniperStop = nil
+end
+
+CS.load()
+
+U.gui = CS.make("ScreenGui", {
+	Name = CS.rname(), ResetOnSpawn = false, IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+})
+pcall(function() if syn and syn.protect_gui then syn.protect_gui(U.gui) end end)
+U.gui.Parent = CS.getParent()
+env.CodeSniperStop = CS.stop
+
+U.main = CS.make("Frame", {
+	Size = UDim2.new(0, 300, 0, 300), Position = UDim2.new(0.5, -150, 0.5, -150),
+	BorderSizePixel = 0, ClipsDescendants = true,
+}, U.gui)
+CS.make("UICorner", { CornerRadius = UDim.new(0, 12) }, U.main)
+U.stroke = CS.make("UIStroke", { Thickness = 1.5 }, U.main)
+U.scale = CS.make("UIScale", { Scale = CS.Scales[CS.Settings.Scale] * 0.85 }, U.main)
+
+U.titleBar = CS.make("Frame", { Size = UDim2.new(1, 0, 0, 38), BorderSizePixel = 0 }, U.main)
+U.title = CS.make("TextLabel", {
+	Size = UDim2.new(1, -84, 1, 0), Position = UDim2.new(0, 12, 0, 0), BackgroundTransparency = 1,
+	Text = "Shox Hub Code Sniper", Font = Enum.Font.GothamBlack, TextSize = 15, Active = true,
+	TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+}, U.titleBar)
+U.minBtn = CS.make("TextButton", {
+	Size = UDim2.new(0, 36, 0, 38), Position = UDim2.new(1, -76, 0, 0), BackgroundTransparency = 1,
+	Text = "-", Font = Enum.Font.GothamBold, TextSize = 22,
+}, U.titleBar)
+U.closeBtn = CS.make("TextButton", {
+	Size = UDim2.new(0, 36, 0, 38), Position = UDim2.new(1, -38, 0, 0), BackgroundTransparency = 1,
+	Text = "X", Font = Enum.Font.GothamBold, TextSize = 16,
+}, U.titleBar)
+
+U.content = CS.make("ScrollingFrame", {
+	Size = UDim2.new(1, -16, 1, -48), Position = UDim2.new(0, 8, 0, 44), BackgroundTransparency = 1,
+	BorderSizePixel = 0, ScrollBarThickness = 3, CanvasSize = UDim2.new(0, 0, 0, 0),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+}, U.main)
+CS.make("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, U.content)
+CS.make("UIPadding", { PaddingRight = UDim.new(0, 6), PaddingBottom = UDim.new(0, 8) }, U.content)
+
+U.safe = CS.button(CS.row(34), "", 1, 1)
+U.sniper = CS.button(CS.row(34), "", 1, 1)
+local optRow1 = CS.row(34)
+U.trans = CS.button(optRow1, "", 1, 2)
+U.size = CS.button(optRow1, "", 2, 2)
+local optRow2 = CS.row(34)
+U.theme = CS.button(optRow2, "", 1, 2)
+U.intro = CS.button(optRow2, "", 2, 2)
+
+U.dd = CS.row(0)
+U.dd.ClipsDescendants = true
+for i, name in ipairs(CS.ThemeOrder) do
+	local palette = CS.Themes[name]
+	local item = CS.make("TextButton", {
+		Text = name, Position = UDim2.new(0, 0, 0, (i - 1) * 30), Size = UDim2.new(1, 0, 0, 26),
+		BackgroundColor3 = palette.bg, TextColor3 = palette.accent, Font = Enum.Font.GothamBold,
+		TextSize = 13, AutoButtonColor = false, BorderSizePixel = 0,
+	}, U.dd)
+	CS.make("UICorner", { CornerRadius = UDim.new(0, 8) }, item)
+	local press = CS.make("UIScale", { Scale = 1 }, item)
+	local stroke = CS.make("UIStroke", { Color = palette.accent, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, item)
+	U.ddItems[i] = { item, stroke, name }
+	CS.on(item.InputBegan, function(input) if CS.isIn(input) then CS.tw(press, { Scale = 0.94 }, 0.08) end end)
+	CS.on(item.InputEnded, function(input) if CS.isIn(input) then CS.tw(press, { Scale = 1 }, 0.3, Enum.EasingStyle.Back) end end)
+	CS.on(item.MouseButton1Click, function()
+		CS.Settings.Theme = name
+		CS.refresh()
+		CS.save()
+		CS.setDD(false)
+		CS.log("Theme: " .. name)
 	end)
 end
 
-on(U.bStop.MouseButton1Click, function()
-	G.CodeSniperStop()
+U.discord = CS.button(CS.row(34), "Discord-Link kopieren", 1, 1)
+local consoleRow = CS.row(110)
+U.console = CS.make("TextLabel", {
+	Size = UDim2.new(1, 0, 1, 0), BorderSizePixel = 0, Text = "",
+	Font = Enum.Font.Code, TextSize = 12, TextWrapped = true, ClipsDescendants = true,
+	TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Bottom,
+}, consoleRow)
+CS.make("UICorner", { CornerRadius = UDim.new(0, 8) }, U.console)
+CS.make("UIPadding", {
+	PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6),
+	PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4),
+}, U.console)
+U.quit = CS.button(CS.row(34), "Beenden", 1, 1)
+
+U.fab = CS.make("TextButton", {
+	Size = UDim2.new(0, 48, 0, 48), Position = UDim2.new(0, 16, 0.5, -24), Text = "CS",
+	Font = Enum.Font.GothamBold, TextSize = 16, AutoButtonColor = false, BorderSizePixel = 0,
+	Visible = false, Active = true,
+}, U.gui)
+CS.make("UICorner", { CornerRadius = UDim.new(1, 0) }, U.fab)
+U.fabStroke = CS.make("UIStroke", { Thickness = 2 }, U.fab)
+
+CS.drag(U.title, U.main, nil)
+CS.drag(U.fab, U.fab, function() CS.setOpen(true) end)
+
+CS.on(U.safe.MouseButton1Click, function()
+	CS.Settings.SafeMode = not CS.Settings.SafeMode
+	CS.setToggle(U.safe, "Safe Mode", CS.Settings.SafeMode)
+	CS.save()
+	CS.log(CS.Settings.SafeMode and "Safe Mode AN: es wird nur simuliert" or "Safe Mode AUS: Einloesen waere echt")
 end)
-
-pcall(function()
-	on(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"), function()
-		layout(false)
-	end)
+CS.on(U.sniper.MouseButton1Click, function()
+	CS.Settings.Sniper = not CS.Settings.Sniper
+	CS.setToggle(U.sniper, "Sniper", CS.Settings.Sniper)
+	CS.save()
+	CS.log(CS.Settings.Sniper and "Sniper AN (Erkennung folgt in Schritt 3)" or "Sniper AUS")
 end)
+CS.on(U.trans.MouseButton1Click, function()
+	CS.Settings.Trans = CS.Settings.Trans % #CS.Trans + 1
+	CS.refresh()
+	CS.save()
+end)
+CS.on(U.size.MouseButton1Click, function()
+	CS.Settings.Scale = CS.Settings.Scale % #CS.Scales + 1
+	CS.tw(U.scale, { Scale = CS.Scales[CS.Settings.Scale] }, 0.4, Enum.EasingStyle.Back)
+	CS.refresh()
+	CS.save()
+end)
+CS.on(U.theme.MouseButton1Click, function() CS.setDD(not CS.ddOpen) end)
+CS.on(U.intro.MouseButton1Click, function()
+	CS.Settings.Intro = not CS.Settings.Intro
+	CS.refresh()
+	CS.save()
+	if CS.Settings.Intro then
+		task.spawn(function()
+			CS.ensureIntro()
+			CS.playIntro()
+		end)
+	else
+		CS.stopIntro()
+	end
+end)
+CS.on(U.discord.MouseButton1Click, function()
+	local ok = pcall(function() setclipboard(CS.Discord) end)
+	CS.log(ok and "Discord-Link kopiert" or "Kopieren nicht moeglich: " .. CS.Discord)
+end)
+CS.on(U.minBtn.MouseButton1Click, function() CS.setOpen(false) end)
+CS.on(U.closeBtn.MouseButton1Click, CS.stop)
+CS.on(U.quit.MouseButton1Click, CS.stop)
 
--- START
-applyTheme(cfg.theme, true)
-updateStatus()
-setOpen(true, false)
-log("ok", "Code Sniper geladen " .. VERSION)
-log("info", "Safe Mode: " .. (cfg.safe and "AN (nur simulieren)" or "AUS"))
-log("info", "Tipp: X schliesst die UI, der CS-Button holt sie zurueck")
-
+CS.refresh()
+CS.log("Shox Hub Code Sniper " .. CS.Version .. " geladen")
+CS.log("Safe Mode: " .. (CS.Settings.SafeMode and "AN" or "AUS"))
+CS.setOpen(true)
 task.spawn(function()
-	local sel = cfg.intro
-	if sel ~= 0 then
-		I.play(sel)
-	end
-	for n = 1, 2 do
-		if n ~= sel then pcall(I.ensure, n) end
-	end
+	CS.ensureIntro()
+	CS.playIntro()
 end)
