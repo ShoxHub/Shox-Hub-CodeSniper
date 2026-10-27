@@ -7,7 +7,6 @@ local S = {
 	RS = game:GetService("RunService"),
 	Sound = game:GetService("SoundService"),
 	Rep = game:GetService("ReplicatedStorage"),
-	Chat = game:GetService("TextChatService"),
 }
 local env = (getgenv and getgenv()) or _G
 if env.CodeSniperStop then pcall(env.CodeSniperStop) end
@@ -24,11 +23,16 @@ local CS = {
 	Found = 0,
 	Hooked = {},
 	Buffer = {},
-	BufferT = 0,
-	LastPiece = {},
+	Seen = {},
+	SeenT = 0,
+	Armed = nil,
+	Btn = nil,
+	Tick = 0,
+	TickN = 0,
 	Recent = {},
 	LastCode = nil,
 	StaleAfter = 30,
+	Triggers = { "%f[%w]use%s*code%f[%W]", "%f[%w]code%s*is%f[%W]" },
 	Dir = "CodeSniper",
 	MusicDir = "CodeSniper/music",
 	File = "CodeSniper_settings.json",
@@ -36,7 +40,7 @@ local CS = {
 	IntroUrl = "https://files.catbox.moe/ocdxaf.ogg",
 	Settings = {
 		SafeMode = true, Sniper = false, Theme = "Frost", Scale = 2, Trans = 1, Intro = true,
-		Parts = 3, AutoSubmit = true, UseNotify = true, UseChat = true,
+		Parts = 3, AutoSubmit = true, UseNotify = true,
 	},
 	Scales = { 0.85, 1, 1.2 },
 	ScaleNames = { "S", "M", "L" },
@@ -139,15 +143,20 @@ CS.log = function(msg)
 	end
 end
 
+CS.armed = function()
+	return CS.Armed ~= nil and os.clock() - CS.Armed <= CS.StaleAfter
+end
+
 CS.updateStatus = function()
 	if not U.status then return end
-	local state = CS.Settings.Sniper and "Listening" or "Sniper off"
+	local isArmed = CS.armed()
+	local state = CS.Settings.Sniper and (isArmed and "Armed" or "Listening") or "Sniper off"
 	local mode = CS.Settings.SafeMode and "SAFE: types code, no submit" or "LIVE: types + submits"
 	U.status.Text = state .. " | " .. mode .. "\nWords " .. #CS.Buffer .. "/" .. CS.Settings.Parts .. "   Last: " .. (CS.LastCode or "-")
 	if U.dot then
 		if not CS.Settings.Sniper then
 			U.dot.BackgroundColor3 = RGB(150, 150, 150)
-		elseif CS.Found > 0 then
+		elseif isArmed then
 			U.dot.BackgroundColor3 = RGB(80, 220, 120)
 		else
 			U.dot.BackgroundColor3 = RGB(255, 170, 40)
@@ -213,7 +222,6 @@ CS.refresh = function()
 	CS.setToggle(U.safe, "Safe Mode", CS.Settings.SafeMode)
 	CS.setToggle(U.auto, "Auto Submit", CS.Settings.AutoSubmit)
 	CS.setToggle(U.notify, "Notify", CS.Settings.UseNotify)
-	CS.setToggle(U.chat, "Chat", CS.Settings.UseChat)
 	U.words.Text = "Collect words: " .. CS.Settings.Parts
 	U.trans.Text = "Opacity: " .. math.floor((1 - CS.Trans[CS.Settings.Trans]) * 100 + 0.5) .. "%"
 	U.size.Text = "Size: " .. CS.ScaleNames[CS.Settings.Scale]
@@ -533,29 +541,47 @@ CS.clean = function(text)
 	return (text)
 end
 
-CS.extractText = function(...)
+CS.strip = function(text)
+	text = text:gsub("^[%.,!%?:;\"'%(%)%[%]%-]+", "")
+	text = text:gsub("[%.,!%?:;\"'%(%)%[%]%-]+$", "")
+	return text
+end
+
+-- Collects every short string from remote arguments (plain strings and tables)
+CS.collect = function(...)
+	local out, seen = {}, {}
+	local function add(value)
+		if type(value) ~= "string" then return end
+		local text = CS.clean(value)
+		if #text > 0 and #text <= 100 and not seen[text] then
+			seen[text] = true
+			out[#out + 1] = text
+		end
+	end
 	local args = table.pack(...)
 	for i = 1, args.n do
 		local value = args[i]
 		if type(value) == "string" then
-			local text = CS.clean(value)
-			if #text > 0 and #text <= 40 then return text end
+			add(value)
 		elseif type(value) == "table" then
 			for _, key in ipairs({ "Text", "text", "Message", "message", "Content", "content" }) do
-				local inner = rawget(value, key)
-				if type(inner) == "string" then
-					local text = CS.clean(inner)
-					if #text > 0 and #text <= 40 then return text end
-				end
+				add(rawget(value, key))
 			end
-			for _, inner in pairs(value) do
-				if type(inner) == "string" then
-					local text = CS.clean(inner)
-					if #text > 0 and #text <= 40 then return text end
-				end
-			end
+			for _, inner in pairs(value) do add(inner) end
 		end
 	end
+	return out
+end
+
+-- Trigger phrases: "use code" / "code is" in any case and with any punctuation.
+-- Returns the text after the trigger (may be ""), or nil when there is no trigger.
+CS.trigger = function(text)
+	local flat = (text:gsub("[^%w]", " ")):lower()
+	for _, pat in ipairs(CS.Triggers) do
+		local _, e = flat:find(pat)
+		if e then return text:sub(e + 1) end
+	end
+	return nil
 end
 
 CS.findBox = function()
@@ -580,6 +606,7 @@ CS.findBox = function()
 		end
 	end
 	CS.Box = box
+	CS.Btn = nil
 	return box
 end
 
@@ -597,6 +624,14 @@ CS.findSubmit = function(box)
 			end
 		end
 		scope = scope.Parent
+	end
+end
+
+-- Keeps the code box and submit button cached so a submit needs no searching
+CS.prime = function()
+	local box = CS.findBox()
+	if box and not (CS.Btn and CS.Btn.Parent) then
+		CS.Btn = CS.findSubmit(box)
 	end
 end
 
@@ -627,8 +662,11 @@ CS.redeem = function(code, submit)
 	if not box then return false, "code TextBox not found" end
 	box.Text = code
 	if not submit then return true, "typed" end
-	task.wait(0.1)
-	local btn = CS.findSubmit(box)
+	local btn = CS.Btn
+	if not (btn and btn.Parent) then
+		btn = CS.findSubmit(box)
+		CS.Btn = btn
+	end
 	if btn and CS.press(btn) then return true, "button " .. btn.Name end
 	if getconnections then
 		local okC, conns = pcall(getconnections, box.FocusLost)
@@ -641,65 +679,95 @@ CS.redeem = function(code, submit)
 	return false, "could not trigger submit"
 end
 
+-- Runs instantly in the same frame (no task.spawn, no wait)
 CS.submit = function(code, source, force)
 	local now = os.clock()
 	if not force and CS.Recent[code] and now - CS.Recent[code] < 30 then return end
 	CS.Recent[code] = now
 	CS.LastCode = code
-	CS.log("Code: " .. code .. " (" .. source .. ")")
-	CS.updateStatus()
 	local live = force or not CS.Settings.SafeMode
-	task.spawn(function()
-		local ok, how = CS.redeem(code, live)
-		if not ok then
-			CS.log("Failed: " .. tostring(how))
-		elseif live then
-			CS.log("Submitted via " .. how)
-		else
-			CS.log("SAFE: typed in box, NOT sent. Press Submit Last")
-		end
-	end)
+	local okR, ok, how = pcall(CS.redeem, code, live)
+	if not okR then
+		ok, how = false, ok
+	end
+	CS.log("Code: " .. code .. " (" .. source .. ")")
+	if not ok then
+		CS.log("Failed: " .. tostring(how))
+	elseif live then
+		CS.log("Submitted via " .. how)
+	else
+		CS.log("SAFE: typed in box, NOT sent. Press Submit Last")
+	end
+	CS.updateStatus()
 end
 
+CS.deliver = function(code)
+	if CS.Settings.AutoSubmit then
+		CS.submit(code, "announcement", false)
+	else
+		CS.LastCode = code
+		CS.log("Code ready: " .. code .. " (Auto Submit OFF)")
+	end
+	CS.updateStatus()
+end
+
+CS.arm = function(src)
+	CS.Armed = os.clock()
+	CS.Buffer = {}
+	CS.log("Trigger (" .. src .. "): collecting")
+	CS.updateStatus()
+end
+
+-- A single word/piece. Only counts while armed by a trigger.
 CS.onPiece = function(text)
-	if not CS.Settings.Sniper or not CS.Settings.UseNotify then return end
+	if not CS.armed() then return end
+	text = CS.strip(text)
+	if text == "" then return end
 	if text:find("%s") then
 		CS.log("Ignored: " .. text)
 		return
 	end
-	local now = os.clock()
-	if CS.LastPiece[text] and now - CS.LastPiece[text] < 1.25 then return end
-	CS.LastPiece[text] = now
-	if #CS.Buffer > 0 and now - CS.BufferT > CS.StaleAfter then
-		CS.Buffer = {}
-		CS.log("Old words cleared")
-	end
+	CS.Armed = os.clock()
 	table.insert(CS.Buffer, text)
-	CS.BufferT = now
 	CS.log("Word " .. #CS.Buffer .. "/" .. CS.Settings.Parts .. ": " .. text)
 	if #CS.Buffer >= CS.Settings.Parts then
 		local code = table.concat(CS.Buffer)
 		CS.Buffer = {}
-		if CS.Settings.AutoSubmit then
-			CS.submit(code, "announcement", false)
-		else
-			CS.LastCode = code
-			CS.log("Code ready: " .. code .. " (Auto Submit OFF)")
-		end
+		CS.Armed = nil
+		CS.deliver(code)
+		return
 	end
 	CS.updateStatus()
 end
 
-CS.onChat = function(text, userId)
-	if not CS.Settings.Sniper or not CS.Settings.UseChat then return end
-	if userId and userId == S.Players.LocalPlayer.UserId then return end
+-- Every detected text (remote or GUI) goes through here
+CS.onText = function(text, src)
+	if not CS.Settings.Sniper or not CS.Settings.UseNotify then return end
 	text = CS.clean(text)
-	if text:match("^[A-Z0-9]+$") and #text >= 4 and #text <= 30 then
-		CS.submit(text, "chat", false)
+	if text == "" then return end
+	local now = os.clock()
+	if now - CS.SeenT > 60 then
+		CS.Seen = {}
+		CS.SeenT = now
+	end
+	if CS.Seen[text] and now - CS.Seen[text] < 1.25 then return end
+	CS.Seen[text] = now
+	local rest = CS.trigger(text)
+	if rest == nil then
+		CS.onPiece(text)
 		return
 	end
-	local tagged = text:match("[Cc][Oo][Dd][Ee]%s*[:=%-]%s*([%w_]+)")
-	if tagged and #tagged >= 3 then CS.submit(tagged, "chat", false) end
+	CS.arm(src)
+	local tokens = {}
+	for tok in rest:gmatch("%S+") do
+		local word = CS.strip(tok)
+		if word ~= "" then tokens[#tokens + 1] = word end
+	end
+	if #tokens > 0 then
+		CS.Armed = nil
+		CS.Buffer = {}
+		CS.deliver(table.concat(tokens))
+	end
 end
 
 CS.hookRemote = function(remote)
@@ -708,8 +776,16 @@ CS.hookRemote = function(remote)
 	CS.Found = CS.Found + 1
 	CS.on(remote.OnClientEvent, function(...)
 		if not CS.Settings.Sniper then return end
-		local text = CS.extractText(...)
-		if text then CS.onPiece(text) end
+		local ok, list = pcall(CS.collect, ...)
+		if not ok then return end
+		local hit = false
+		for _, text in ipairs(list) do
+			if CS.trigger(text) ~= nil then
+				hit = true
+				CS.onText(text, "remote")
+			end
+		end
+		if not hit and list[1] then CS.onText(list[1], "remote") end
 	end)
 	CS.log("Hooked remote: " .. remote.Name)
 	CS.updateStatus()
@@ -792,34 +868,31 @@ CS.discover = function()
 			task.wait(2)
 		end
 		CS.Discovering = false
-		if CS.Found == 0 then CS.log("No notification remote found") end
+		if CS.Found == 0 then CS.log("No notification remote found (GUI watcher still active)") end
 		CS.updateStatus()
 	end)
 end
 
-CS.hookChat = function()
-	pcall(function()
-		local function hookChannel(obj)
-			if obj:IsA("TextChannel") and not CS.Hooked[obj] then
-				CS.Hooked[obj] = true
-				CS.on(obj.MessageReceived, function(msg)
-					local userId = msg.TextSource and msg.TextSource.UserId
-					CS.onChat(msg.Text, userId)
-				end)
-			end
+-- Second detection path: watches new text labels that appear in the game UI.
+-- Waits until the text stops changing so typewriter-style notifications are read complete.
+CS.hookGui = function()
+	local pg = S.Players.LocalPlayer:FindFirstChild("PlayerGui") or S.Players.LocalPlayer:WaitForChild("PlayerGui", 10)
+	if not pg then return end
+	CS.on(pg.DescendantAdded, function(d)
+		if not CS.Settings.Sniper or not d:IsA("TextLabel") then return end
+		if U.gui and d:IsDescendantOf(U.gui) then return end
+		if CS.introG and d:IsDescendantOf(CS.introG) then return end
+		local ver = 0
+		local function check()
+			ver = ver + 1
+			local mine = ver
+			task.delay(0.15, function()
+				if CS.Running and mine == ver and d.Text ~= "" then CS.onText(d.Text, "gui") end
+			end)
 		end
-		for _, obj in ipairs(S.Chat:GetDescendants()) do hookChannel(obj) end
-		CS.on(S.Chat.DescendantAdded, hookChannel)
-	end)
-	pcall(function()
-		local function hookPlayer(player)
-			if not CS.Hooked[player] then
-				CS.Hooked[player] = true
-				CS.on(player.Chatted, function(message) CS.onChat(message, player.UserId) end)
-			end
-		end
-		for _, player in ipairs(S.Players:GetPlayers()) do hookPlayer(player) end
-		CS.on(S.Players.PlayerAdded, hookPlayer)
+		check()
+		local conn = d:GetPropertyChangedSignal("Text"):Connect(check)
+		task.delay(3, function() conn:Disconnect() end)
 	end)
 end
 
@@ -896,8 +969,7 @@ local wordRow = CS.row(34)
 U.words = CS.button(wordRow, "", 1, 2)
 U.auto = CS.button(wordRow, "", 2, 2)
 local srcRow = CS.row(34)
-U.notify = CS.button(srcRow, "", 1, 2)
-U.chat = CS.button(srcRow, "", 2, 2)
+U.notify = CS.button(srcRow, "", 1, 1)
 
 U.status = CS.make("TextLabel", {
 	Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = "", Font = Enum.Font.GothamBold,
@@ -987,8 +1059,12 @@ CS.on(U.sniper.MouseButton1Click, function()
 	CS.setToggle(U.sniper, "Sniper", CS.Settings.Sniper)
 	CS.save()
 	CS.Buffer = {}
-	CS.log(CS.Settings.Sniper and "Sniper ON: listening" or "Sniper OFF")
-	if CS.Settings.Sniper then CS.discover() end
+	CS.Armed = nil
+	CS.log(CS.Settings.Sniper and "Sniper ON: waiting for trigger" or "Sniper OFF")
+	if CS.Settings.Sniper then
+		CS.discover()
+		pcall(CS.prime)
+	end
 	CS.updateStatus()
 end)
 CS.on(U.safe.MouseButton1Click, function()
@@ -1014,11 +1090,6 @@ end)
 CS.on(U.notify.MouseButton1Click, function()
 	CS.Settings.UseNotify = not CS.Settings.UseNotify
 	CS.setToggle(U.notify, "Notify", CS.Settings.UseNotify)
-	CS.save()
-end)
-CS.on(U.chat.MouseButton1Click, function()
-	CS.Settings.UseChat = not CS.Settings.UseChat
-	CS.setToggle(U.chat, "Chat", CS.Settings.UseChat)
 	CS.save()
 end)
 CS.on(U.submitManual.MouseButton1Click, function()
@@ -1070,13 +1141,20 @@ CS.on(S.RS.Heartbeat, function(dt)
 	U.grad.Rotation = (U.grad.Rotation + dt * (CS.Settings.Sniper and 90 or 40)) % 360
 	local pulse = (math.sin(os.clock() * 4) + 1) / 2
 	U.dot.BackgroundTransparency = CS.Settings.Sniper and (0.5 * (1 - pulse)) or 0.4
+	CS.Tick = CS.Tick + dt
+	if CS.Tick >= 0.5 then
+		CS.Tick = 0
+		CS.TickN = CS.TickN + 1
+		if CS.Settings.Sniper and CS.TickN % 4 == 0 then pcall(CS.prime) end
+		CS.updateStatus()
+	end
 end)
 
 CS.refresh()
 CS.log("Shox Hub Code Sniper " .. CS.Version .. " loaded")
 CS.log("Safe Mode: " .. (CS.Settings.SafeMode and "ON (types, no send)" or "OFF (types + sends)"))
 CS.setOpen(true)
-CS.hookChat()
+task.spawn(function() pcall(CS.hookGui) end)
 
 -- Remote scan runs after the intro so it cannot cause lag during it
 task.spawn(function()
