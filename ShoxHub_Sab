@@ -8,6 +8,7 @@ local S = {
 	Sound = game:GetService("SoundService"),
 	Rep = game:GetService("ReplicatedStorage"),
 	Chat = game:GetService("TextChatService"),
+	Content = game:GetService("ContentProvider"),
 }
 local env = (getgenv and getgenv()) or _G
 if env.CodeSniperStop then pcall(env.CodeSniperStop) end
@@ -27,12 +28,13 @@ local CS = {
 	BufferT = 0,
 	LastPiece = {},
 	Recent = {},
+	StaleAfter = 30,
 	Dir = "CodeSniper",
 	MusicDir = "CodeSniper/music",
 	File = "CodeSniper_settings.json",
 	Discord = "https://discord.gg/EA7xS26mA9",
 	IntroUrl = "https://files.catbox.moe/ocdxaf.ogg",
-	Settings = { SafeMode = true, Sniper = false, Theme = "Frost", Scale = 2, Trans = 1, Intro = true, Parts = 3 },
+	Settings = { SafeMode = true, Sniper = false, Theme = "Frost", Scale = 2, Trans = 1, Intro = true, Parts = 3, AutoSubmit = true },
 	Scales = { 0.85, 1, 1.2 },
 	ScaleNames = { "S", "M", "L" },
 	Trans = { 0, 0.2, 0.4 },
@@ -91,6 +93,7 @@ CS.load = function()
 	if not CS.Scales[CS.Settings.Scale] then CS.Settings.Scale = 2 end
 	if not CS.Trans[CS.Settings.Trans] then CS.Settings.Trans = 1 end
 	if CS.Settings.Parts < 1 or CS.Settings.Parts > 6 then CS.Settings.Parts = 3 end
+	CS.T = CS.Themes[CS.Settings.Theme]
 end
 
 CS.save = function()
@@ -184,7 +187,8 @@ CS.refresh = function()
 	end
 	CS.setToggle(U.safe, "Safe Mode", CS.Settings.SafeMode)
 	CS.setToggle(U.sniper, "Sniper", CS.Settings.Sniper)
-	U.parts.Text = "Announcement parts: " .. CS.Settings.Parts
+	CS.setToggle(U.auto, "Auto Submit", CS.Settings.AutoSubmit)
+	U.words.Text = "Collect words: " .. CS.Settings.Parts
 	U.trans.Text = "Opacity: " .. math.floor((1 - CS.Trans[CS.Settings.Trans]) * 100 + 0.5) .. "%"
 	U.size.Text = "Size: " .. CS.ScaleNames[CS.Settings.Scale]
 	U.theme.Text = "Theme: " .. CS.Settings.Theme
@@ -403,13 +407,19 @@ CS.playIntro = function()
 	s.Volume = 0.6 s.SoundId = id s.Looped = false
 	s.Parent = S.Sound
 	CS.introS = s
+	pcall(function() S.Content:PreloadAsync({ s }) end)
+	if not CS.Running or not CS.Settings.Intro then
+		pcall(function() s:Destroy() end)
+		if CS.introS == s then CS.introS = nil end
+		return
+	end
 	CS.on(s.Ended, function()
 		if CS.introS == s then CS.introS = nil end
 		s:Destroy()
 	end)
 	s:Play()
 	local waited = os.clock()
-	while CS.Running and s.Parent and not s.IsPlaying and os.clock() - waited < 8 do task.wait(0.05) end
+	while CS.Running and s.Parent and not s.IsPlaying and os.clock() - waited < 8 do task.wait(0.03) end
 	if not CS.Running or not CS.Settings.Intro then return end
 	if not s.IsPlaying and not s.IsLoaded then
 		s:Destroy()
@@ -522,11 +532,10 @@ end
 CS.redeem = function(code)
 	local pg = S.Players.LocalPlayer:FindFirstChild("PlayerGui")
 	if not pg then return false, "PlayerGui missing" end
-	local box
 	local g1 = pg:FindFirstChild("Codes")
 	local g2 = g1 and g1:FindFirstChild("Codes")
 	local g3 = g2 and g2:FindFirstChild("CodeRedeem")
-	box = g3 and g3:FindFirstChild("TextBox")
+	local box = g3 and g3:FindFirstChild("TextBox")
 	if not (box and box:IsA("TextBox")) then
 		box = nil
 		for _, d in ipairs(pg:GetDescendants()) do
@@ -537,6 +546,7 @@ CS.redeem = function(code)
 		end
 	end
 	if not box then return false, "code TextBox not found" end
+	CS.log("TextBox: " .. box:GetFullName():gsub("^.-PlayerGui%.", ""))
 	box.Text = code
 	local fired = false
 	if firesignal then
@@ -573,9 +583,9 @@ CS.submit = function(code, source)
 	local now = os.clock()
 	if CS.Recent[code] and now - CS.Recent[code] < 30 then return end
 	CS.Recent[code] = now
-	CS.log("Code found: " .. code .. " (" .. source .. ")")
+	CS.log("Code: " .. code .. " (" .. source .. ")")
 	if CS.Settings.SafeMode then
-		CS.log("[SAFE MODE] simulated only, not redeemed")
+		CS.log("[SAFE MODE ON] simulated only. Turn it OFF to redeem")
 		return
 	end
 	local ok, why = CS.redeem(code)
@@ -584,20 +594,28 @@ end
 
 CS.onPiece = function(text)
 	if not CS.Settings.Sniper then return end
+	if text:find("%s") then
+		CS.log("Ignored: " .. text)
+		return
+	end
 	local now = os.clock()
 	if CS.LastPiece[text] and now - CS.LastPiece[text] < 1.25 then return end
 	CS.LastPiece[text] = now
-	if #CS.Buffer > 0 and now - CS.BufferT > 6 then
+	if #CS.Buffer > 0 and now - CS.BufferT > CS.StaleAfter then
 		CS.Buffer = {}
-		CS.log("Old pieces cleared")
+		CS.log("Old words cleared")
 	end
 	table.insert(CS.Buffer, text)
 	CS.BufferT = now
-	CS.log("Piece " .. #CS.Buffer .. "/" .. CS.Settings.Parts .. ": " .. text)
+	CS.log("Word " .. #CS.Buffer .. "/" .. CS.Settings.Parts .. ": " .. text)
 	if #CS.Buffer >= CS.Settings.Parts then
 		local code = table.concat(CS.Buffer)
 		CS.Buffer = {}
-		CS.submit(code, "announcement")
+		if CS.Settings.AutoSubmit then
+			CS.submit(code, "announcement")
+		else
+			CS.log("Code ready: " .. code .. " (Auto Submit OFF)")
+		end
 	end
 end
 
@@ -743,6 +761,16 @@ CS.stop = function()
 end
 
 CS.load()
+env.CodeSniperStop = CS.stop
+
+-- Start the intro first so the song loads while the UI is built
+task.spawn(function()
+	pcall(function()
+		CS.ensureIntro()
+		CS.playIntro()
+	end)
+	CS.IntroDone = true
+end)
 
 U.gui = CS.make("ScreenGui", {
 	Name = CS.rname(), ResetOnSpawn = false, IgnoreGuiInset = true,
@@ -750,7 +778,6 @@ U.gui = CS.make("ScreenGui", {
 })
 pcall(function() if syn and syn.protect_gui then syn.protect_gui(U.gui) end end)
 U.gui.Parent = CS.getParent()
-env.CodeSniperStop = CS.stop
 
 U.main = CS.make("Frame", {
 	Size = UDim2.new(0, 300, 0, 300), Position = UDim2.new(0.5, -150, 0.5, -150),
@@ -785,7 +812,9 @@ CS.make("UIPadding", { PaddingRight = UDim.new(0, 6), PaddingBottom = UDim.new(0
 
 U.safe = CS.button(CS.row(34), "", 1, 1)
 U.sniper = CS.button(CS.row(34), "", 1, 1)
-U.parts = CS.button(CS.row(34), "", 1, 1)
+local sniperRow = CS.row(34)
+U.words = CS.button(sniperRow, "", 1, 2)
+U.auto = CS.button(sniperRow, "", 2, 2)
 local optRow1 = CS.row(34)
 U.trans = CS.button(optRow1, "", 1, 2)
 U.size = CS.button(optRow1, "", 2, 2)
@@ -864,10 +893,16 @@ CS.on(U.sniper.MouseButton1Click, function()
 	CS.log(CS.Settings.Sniper and "Sniper ON: listening to announcements and chat" or "Sniper OFF")
 	if CS.Settings.Sniper then CS.discover() end
 end)
-CS.on(U.parts.MouseButton1Click, function()
+CS.on(U.words.MouseButton1Click, function()
 	CS.Settings.Parts = CS.Settings.Parts % 6 + 1
 	CS.Buffer = {}
 	CS.refresh()
+	CS.save()
+	CS.log("Collect " .. CS.Settings.Parts .. " word(s), then submit")
+end)
+CS.on(U.auto.MouseButton1Click, function()
+	CS.Settings.AutoSubmit = not CS.Settings.AutoSubmit
+	CS.setToggle(U.auto, "Auto Submit", CS.Settings.AutoSubmit)
 	CS.save()
 end)
 CS.on(U.trans.MouseButton1Click, function()
@@ -888,8 +923,10 @@ CS.on(U.intro.MouseButton1Click, function()
 	CS.save()
 	if CS.Settings.Intro then
 		task.spawn(function()
-			CS.ensureIntro()
-			CS.playIntro()
+			pcall(function()
+				CS.ensureIntro()
+				CS.playIntro()
+			end)
 		end)
 	else
 		CS.stopIntro()
@@ -908,8 +945,10 @@ CS.log("Shox Hub Code Sniper " .. CS.Version .. " loaded")
 CS.log("Safe Mode: " .. (CS.Settings.SafeMode and "ON" or "OFF"))
 CS.setOpen(true)
 CS.hookChat()
-CS.discover()
+
+-- Remote scan runs after the intro so it cannot cause lag during it
 task.spawn(function()
-	CS.ensureIntro()
-	CS.playIntro()
+	local started = os.clock()
+	while CS.Running and (not CS.IntroDone or CS.introG) and os.clock() - started < 15 do task.wait(0.1) end
+	if CS.Running then CS.discover() end
 end)
