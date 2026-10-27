@@ -719,7 +719,7 @@ CS.arm = function(src)
 end
 
 -- A single word/piece. Only counts while armed by a trigger.
-CS.onPiece = function(text)
+CS.onPiece = function(text, src)
 	if not CS.armed() then return end
 	text = CS.strip(text)
 	if text == "" then return end
@@ -729,7 +729,7 @@ CS.onPiece = function(text)
 	end
 	CS.Armed = os.clock()
 	table.insert(CS.Buffer, text)
-	CS.log("Word " .. #CS.Buffer .. "/" .. CS.Settings.Parts .. ": " .. text)
+	CS.log("Word " .. #CS.Buffer .. "/" .. CS.Settings.Parts .. ": " .. text .. " (" .. tostring(src) .. ")")
 	if #CS.Buffer >= CS.Settings.Parts then
 		local code = table.concat(CS.Buffer)
 		CS.Buffer = {}
@@ -754,7 +754,7 @@ CS.onText = function(text, src)
 	CS.Seen[text] = now
 	local rest = CS.trigger(text)
 	if rest == nil then
-		CS.onPiece(text)
+		CS.onPiece(text, src)
 		return
 	end
 	CS.arm(src)
@@ -882,6 +882,7 @@ CS.hookGui = function()
 		if not CS.Settings.Sniper or not d:IsA("TextLabel") then return end
 		if U.gui and d:IsDescendantOf(U.gui) then return end
 		if CS.introG and d:IsDescendantOf(CS.introG) then return end
+		if d:GetFullName():lower():find("prompt", 1, true) then return end
 		local ver = 0
 		local function check()
 			ver = ver + 1
