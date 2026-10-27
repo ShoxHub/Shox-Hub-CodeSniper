@@ -1,12 +1,11 @@
 --[[
 	Code Sniper | Steal a Brainrot (nur AA-Server) | Delta / Android
-	Schritt 1: Fundament
-	- eigene leichte UI (laeuft ohne externe Library)
-	- Safe Mode (Standard AN)
-	- Floating Menu Button (wenn die UI zu ist)
-	- Themes: Frost, Lava, Natural
-	- Einstellungen: Theme + Intro-Auswahl (Intro 1 / Intro 2 / Aus)
-	- Console, Discord-Button, Beenden-Button
+	Schritt 2: Intros + Animationen
+	- Intro 1 + Intro 2 (Song wird beim ersten Start automatisch geladen und
+	  im Ordner CodeSniper/music gespeichert, danach nur noch lokal)
+	- Intro in den Einstellungen waehlbar (Intro 1 / Intro 2 / Aus), Tipp = Vorschau
+	- Smooth Animationen (Fenster auf/zu, Minimieren, Floating Button, Themes, Rahmen)
+	- Safe Mode (Standard AN), Floating Button, Themes, Console, Discord, Beenden
 	Erkennung + Einloesen kommen in Schritt 3 und 4.
 ]]
 
@@ -19,6 +18,7 @@ local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local TS = game:GetService("TweenService")
 local HS = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 
 local lp = Players.LocalPlayer
 if not lp then
@@ -26,7 +26,7 @@ if not lp then
 	lp = Players.LocalPlayer
 end
 
-local VERSION = "v0.1 (Schritt 1)"
+local VERSION = "v0.2 (Schritt 2)"
 local DISCORD = "https://discord.gg/EA7xS26mA9"
 local FILE = "CodeSniper_settings.json"
 local W, H, HMIN = 260, 330, 40
@@ -164,6 +164,34 @@ local function rgbStr(c)
 	return string.format("rgb(%d,%d,%d)", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
 end
 
+local function guiParent()
+	local ok, h = pcall(function()
+		return gethui and gethui()
+	end)
+	if ok and h then return h end
+	local ok2, cg = pcall(function()
+		return game:GetService("CoreGui")
+	end)
+	if ok2 and cg then return cg end
+	return lp:WaitForChild("PlayerGui")
+end
+
+local function newGui(order)
+	local g = Instance.new("ScreenGui")
+	g.Name = rname()
+	g.ResetOnSpawn = false
+	g.IgnoreGuiInset = true
+	g.DisplayOrder = order
+	g.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	local ok = pcall(function()
+		g.Parent = guiParent()
+	end)
+	if not ok or not g.Parent then
+		g.Parent = lp:WaitForChild("PlayerGui")
+	end
+	return g
+end
+
 -- LOG + STATUS
 local logLines = {}
 
@@ -198,31 +226,7 @@ local function updateStatus()
 end
 
 -- GUI GRUNDGERUEST
-local gui = Instance.new("ScreenGui")
-gui.Name = rname()
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-gui.DisplayOrder = 999999
-gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-local function guiParent()
-	local ok, h = pcall(function()
-		return gethui and gethui()
-	end)
-	if ok and h then return h end
-	local ok2, cg = pcall(function()
-		return game:GetService("CoreGui")
-	end)
-	if ok2 and cg then return cg end
-	return lp:WaitForChild("PlayerGui")
-end
-
-local okParent = pcall(function()
-	gui.Parent = guiParent()
-end)
-if not okParent or not gui.Parent then
-	gui.Parent = lp:WaitForChild("PlayerGui")
-end
+local gui = newGui(999999)
 
 -- root = Position/Groesse in echten Pixeln, inner = die sichtbare UI (mit UIScale)
 U.root = mk("Frame", {
@@ -240,7 +244,13 @@ U.inner = mk("Frame", {
 reg(U.inner, "BackgroundColor3", "bg")
 corner(U.inner, 14)
 U.sc = mk("UIScale", { Scale = 1 }, U.inner)
-reg(mk("UIStroke", { Thickness = 1.5, Transparency = 0.25, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, U.inner), "Color", "acc")
+U.stroke = mk("UIStroke", {
+	Thickness = 2,
+	Color = Color3.new(1, 1, 1),
+	Transparency = 0.1,
+	ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+}, U.inner)
+U.grad = mk("UIGradient", { Rotation = 0 }, U.stroke)
 
 -- Header
 U.title = mk("TextLabel", {
@@ -289,6 +299,13 @@ local function hdrBtn(text, x)
 	corner(b, 8)
 	reg(b, "BackgroundColor3", "btn")
 	reg(b, "TextColor3", "txt")
+	local sc = mk("UIScale", { Scale = 1 }, b)
+	on(b.InputBegan, function(x2)
+		if isPress(x2) then tw(sc, { Scale = 0.85 }, 0.08) end
+	end)
+	on(b.InputEnded, function(x2)
+		if isPress(x2) then tw(sc, { Scale = 1 }, 0.3, Enum.EasingStyle.Back) end
+	end)
 	return b
 end
 U.bMin = hdrBtn("-", W - 62)
@@ -376,10 +393,16 @@ local function colBtn(parent, i, n, text)
 	reg(sk, "Color", "acc")
 	local sc = mk("UIScale", { Scale = 1 }, b)
 	on(b.InputBegan, function(x)
-		if isPress(x) then tw(sc, { Scale = 0.94 }, 0.08) end
+		if isPress(x) then
+			tw(sc, { Scale = 0.94 }, 0.08)
+			tw(sk, { Transparency = 0, Thickness = 2 }, 0.08)
+		end
 	end)
 	on(b.InputEnded, function(x)
-		if isPress(x) then tw(sc, { Scale = 1 }, 0.25, Enum.EasingStyle.Back) end
+		if isPress(x) then
+			tw(sc, { Scale = 1 }, 0.3, Enum.EasingStyle.Back)
+			tw(sk, { Transparency = 0.6, Thickness = 1 }, 0.35)
+		end
 	end)
 	return b
 end
@@ -419,8 +442,8 @@ local function addToggle(text, key, onChange)
 		local pos = isOn and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
 		local col = isOn and T.acc or T.line
 		if anim then
-			tw(pill, { BackgroundColor3 = col }, 0.15)
-			tw(dot, { Position = pos, BackgroundColor3 = T.bg }, 0.15)
+			tw(pill, { BackgroundColor3 = col }, 0.2)
+			tw(dot, { Position = pos, BackgroundColor3 = T.bg }, 0.25, Enum.EasingStyle.Back)
 		else
 			pill.BackgroundColor3 = col
 			dot.Position = pos
@@ -527,19 +550,17 @@ U.fb = mk("TextButton", {
 corner(U.fb, 13)
 reg(U.fb, "BackgroundColor3", "bg")
 reg(U.fb, "TextColor3", "acc")
-reg(mk("UIStroke", { Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, U.fb), "Color", "acc")
+U.fbSc = mk("UIScale", { Scale = 1 }, U.fb)
+U.fbStroke = mk("UIStroke", {
+	Thickness = 2,
+	Color = Color3.new(1, 1, 1),
+	ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+}, U.fb)
+U.fbGrad = mk("UIGradient", { Rotation = 0 }, U.fbStroke)
 
 -- LAYOUT (Skalierung, Minimieren, im Bild halten)
-local function layout()
+local function clampRoot(s)
 	local v = viewport()
-	local s = math.clamp(v.Y / 470, 0.72, 1)
-	local h = cfg.min and HMIN or H
-	U.sc.Scale = s
-	U.inner.Size = UDim2.fromOffset(W, h)
-	U.root.Size = UDim2.fromOffset(W * s, h * s)
-	U.body.Visible = not cfg.min
-	U.div.Visible = not cfg.min
-	U.bMin.Text = cfg.min and "+" or "-"
 	local p = U.root.Position
 	U.root.Position = UDim2.fromOffset(
 		math.clamp(p.X.Offset, -(W * s) + 70, v.X - 70),
@@ -547,10 +568,68 @@ local function layout()
 	)
 end
 
-local function setOpen(open)
-	U.root.Visible = open
-	U.fb.Visible = not open
-	if open then layout() end
+local function layout(anim)
+	local v = viewport()
+	local s = math.clamp(v.Y / 470, 0.72, 1)
+	local h = cfg.min and HMIN or H
+	U.sc.Scale = s
+	U.bMin.Text = cfg.min and "+" or "-"
+	U.layTok = (U.layTok or 0) + 1
+	local tok = U.layTok
+	if anim then
+		if not cfg.min then
+			U.body.Visible = true
+			U.div.Visible = true
+		end
+		tw(U.inner, { Size = UDim2.fromOffset(W, h) }, 0.35)
+		tw(U.root, { Size = UDim2.fromOffset(W * s, h * s) }, 0.35)
+		task.delay(0.38, function()
+			if tok ~= U.layTok then return end
+			U.body.Visible = not cfg.min
+			U.div.Visible = not cfg.min
+			clampRoot(s)
+		end)
+	else
+		U.inner.Size = UDim2.fromOffset(W, h)
+		U.root.Size = UDim2.fromOffset(W * s, h * s)
+		U.body.Visible = not cfg.min
+		U.div.Visible = not cfg.min
+		clampRoot(s)
+	end
+end
+
+local function setOpen(open, anim)
+	U.openTok = (U.openTok or 0) + 1
+	local tok = U.openTok
+	if open then
+		U.fb.Visible = false
+		U.root.Visible = true
+		layout(false)
+		if anim then
+			local s = U.sc.Scale
+			U.sc.Scale = s * 0.85
+			U.inner.BackgroundTransparency = 0.6
+			tw(U.sc, { Scale = s }, 0.4, Enum.EasingStyle.Back)
+			tw(U.inner, { BackgroundTransparency = 0 }, 0.3)
+		end
+	else
+		U.fb.Visible = true
+		U.fbSc.Scale = 0
+		tw(U.fbSc, { Scale = 1 }, 0.45, Enum.EasingStyle.Back)
+		if anim then
+			local s = U.sc.Scale
+			tw(U.sc, { Scale = s * 0.85 }, 0.2)
+			tw(U.inner, { BackgroundTransparency = 0.6 }, 0.2)
+			task.delay(0.22, function()
+				if tok ~= U.openTok then return end
+				U.root.Visible = false
+				U.sc.Scale = s
+				U.inner.BackgroundTransparency = 0
+			end)
+		else
+			U.root.Visible = false
+		end
+	end
 end
 
 -- ZIEHEN (Fenster + Floating Button)
@@ -603,17 +682,458 @@ makeDrag(U.dragH, U.root, nil, function()
 end)
 
 makeDrag(U.fb, U.fb, function()
-	setOpen(true)
+	setOpen(true, true)
 end, function()
 	local p = U.fb.Position
 	cfg.mpos = { p.X.Offset, p.Y.Offset }
 	save()
 end)
 
+-- INTRO (Download in den Ordner + Animation)
+local I = { busy = {}, active = nil, tok = 0 }
+
+do
+	local DIR = "CodeSniper"
+	local MDIR = "CodeSniper/music"
+	local URLS = {
+		[1] = "https://files.catbox.moe/8a03lo.ogg",
+		[2] = "https://files.catbox.moe/jniftl.ogg",
+	}
+	-- Zeitplan: { Zeit in s, Staerke, Art }  a = CODE knallt rein, b = SNIPER knallt rein
+	local SCH = {
+		[1] = {
+			dur = 5.06, f0 = 4.95, f1 = 5.5, line = 0.84, sub = 3.15,
+			beats = {
+				{ 0.05, 1, "a" }, { 0.52, 1, "b" }, { 0.84, 0.6 }, { 1.28, 0.9 }, { 1.58, 0.5 },
+				{ 1.88, 0.9 }, { 2.11, 0.6 }, { 2.48, 2.2, "drop" }, { 3.15, 1 }, { 3.74, 1 },
+				{ 4.34, 1.2 }, { 4.75, 1.7, "end" },
+			},
+		},
+		[2] = {
+			dur = 7.73, f0 = 7.25, f1 = 7.73, line = 1.05, sub = 1.58,
+			beats = {
+				{ 0.48, 0.7, "a" }, { 0.8, 0.4 }, { 1.05, 0.8, "b" }, { 1.3, 0.5 }, { 1.58, 2.4, "drop" },
+				{ 2.12, 1.3 }, { 2.68, 1.0 }, { 3.23, 1.3 }, { 3.78, 1.0 }, { 4.33, 1.4 },
+				{ 4.88, 1.0 }, { 5.42, 1.3 }, { 5.97, 1.0 }, { 6.52, 1.5 }, { 7.07, 2.0, "end" },
+			},
+		},
+	}
+	local LET = { "C", "O", "D", "E", "S", "N", "I", "P", "E", "R" }
+
+	pcall(makefolder, DIR)
+	pcall(makefolder, MDIR)
+
+	local function pathOf(n)
+		return MDIR .. "/intro" .. n .. ".ogg"
+	end
+
+	local function isOgg(b)
+		return type(b) == "string" and #b > 1000 and b:sub(1, 4) == "OggS"
+	end
+
+	local function download(url)
+		local why = "keine Antwort"
+		local rq = request or http_request or (syn and syn.request)
+		if rq then
+			local ok, r = pcall(rq, { Url = url, Method = "GET" })
+			if ok and type(r) == "table" then
+				if isOgg(r.Body) then return r.Body end
+				why = "HTTP " .. tostring(r.StatusCode) .. ", " .. tostring(type(r.Body) == "string" and #r.Body or 0) .. " Bytes"
+			else
+				why = "request fehlgeschlagen"
+			end
+		end
+		local ok2, b = pcall(function()
+			return game:HttpGet(url)
+		end)
+		if ok2 and isOgg(b) then return b end
+		return nil, why
+	end
+
+	local function have(p)
+		local ok, b = pcall(readfile, p)
+		return ok and isOgg(b)
+	end
+
+	-- stellt sicher, dass die Datei lokal da ist. gibt den Pfad zurueck oder nil
+	function I.ensure(n)
+		local p = pathOf(n)
+		local w = os.clock()
+		while I.busy[n] and os.clock() - w < 30 do
+			task.wait(0.1)
+		end
+		if have(p) then return p end
+		if not (writefile and readfile) then
+			log("err", "Intro: Executor kann keine Dateien speichern")
+			return nil
+		end
+		I.busy[n] = true
+		log("info", "Intro " .. n .. ": lade Song herunter ...")
+		local data, why
+		for _ = 1, 3 do
+			data, why = download(URLS[n])
+			if data then break end
+			task.wait(1)
+		end
+		if data then
+			local okw = pcall(writefile, p, data)
+			if not okw then
+				data = nil
+				why = "Datei konnte nicht gespeichert werden"
+			end
+		end
+		I.busy[n] = false
+		if data and have(p) then
+			log("ok", "Intro " .. n .. " bereit (" .. math.floor(#data / 1024) .. " KB)")
+			return p
+		end
+		log("err", "Intro " .. n .. ": Download fehlgeschlagen (" .. tostring(why) .. ")")
+		return nil
+	end
+
+	function I.stop()
+		if I.active then
+			pcall(I.active.finish)
+		end
+	end
+
+	local function introFx(snd, n)
+		local sch = SCH[n]
+		local k = 1
+		if n == 1 and snd then
+			local okL, len = pcall(function()
+				return snd.TimeLength
+			end)
+			if okL and type(len) == "number" and len > 0.5 then k = len / sch.dur end
+		end
+		local beats = {}
+		for i, b in ipairs(sch.beats) do
+			beats[i] = { b[1] * k, b[2], b[3] }
+		end
+		local f0, f1 = sch.f0 * k, sch.f1 * k
+		local lineT, subT = sch.line * k, sch.sub * k
+
+		local ig = newGui(1000000)
+		local vp = viewport()
+		local base = math.clamp(math.min(vp.X * 0.8 / 470, vp.Y * 0.45 / 100), 0.5, 2.6)
+		local bg = mk("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = T.bg,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+		}, ig)
+		local stage = mk("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+		}, ig)
+		local sc = mk("UIScale", { Scale = base }, stage)
+
+		local L = {}
+		for i, ch in ipairs(LET) do
+			local x = -235 + 22 + (i - 1) * 44 + (i >= 5 and 30 or 0)
+			local w = mk("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.new(0.5, x, 0.5, -10),
+				Size = UDim2.fromOffset(44, 76),
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+			}, stage)
+			local us = mk("UIScale", { Scale = 1 }, w)
+			local lb = mk("TextLabel", {
+				Size = UDim2.fromScale(1, 1),
+				BackgroundTransparency = 1,
+				Text = ch,
+				Font = Enum.Font.GothamBlack,
+				TextSize = 66,
+				TextColor3 = T.acc,
+				TextTransparency = 1,
+			}, w)
+			L[i] = { w = w, us = us, lb = lb, x = x, hit = -10, amp = 0, rev = math.huge }
+		end
+
+		local line = mk("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, 0, 0.5, 52),
+			Size = UDim2.fromOffset(0, 4),
+			BackgroundColor3 = T.acc,
+			BorderSizePixel = 0,
+		}, stage)
+		local sub = mk("TextLabel", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, 0, 0.5, 80),
+			Size = UDim2.fromOffset(470, 22),
+			BackgroundTransparency = 1,
+			Text = "Steal a Brainrot  |  Code Sniper",
+			Font = Enum.Font.GothamBold,
+			TextSize = 16,
+			TextColor3 = T.sub,
+			TextTransparency = 1,
+		}, stage)
+		local fl = mk("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = T.acc,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ZIndex = 5,
+		}, ig)
+		local skip = mk("TextButton", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -14, 0, 14),
+			Size = UDim2.fromOffset(78, 32),
+			BackgroundColor3 = T.btn,
+			Text = "Skip",
+			TextColor3 = T.txt,
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			AutoButtonColor = false,
+			BorderSizePixel = 0,
+			ZIndex = 10,
+		}, ig)
+		corner(skip, 9)
+		mk("UIStroke", { Color = T.acc, Thickness = 1, Transparency = 0.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, skip)
+
+		local function spark(cnt, wide)
+			for _ = 1, cnt do
+				local a = math.random() * math.pi * 2
+				local d = (wide and 260 or 130) * (0.4 + math.random() * 0.8)
+				local sx = L[math.random(1, #L)].x
+				local p = mk("Frame", {
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.new(0.5, sx, 0.5, -10),
+					Size = UDim2.fromOffset(6, 6),
+					Rotation = math.random(0, 90),
+					BackgroundColor3 = T.acc,
+					BorderSizePixel = 0,
+				}, stage)
+				tw(p, {
+					Position = UDim2.new(0.5, sx + math.cos(a) * d, 0.5, -10 + math.sin(a) * d),
+					BackgroundTransparency = 1,
+					Size = UDim2.fromOffset(2, 2),
+				}, 0.55)
+				task.delay(0.6, function()
+					pcall(function()
+						p:Destroy()
+					end)
+				end)
+			end
+		end
+
+		local function ring(th)
+			local r = mk("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.new(0.5, 0, 0.5, -10),
+				Size = UDim2.fromOffset(40, 40),
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+			}, stage)
+			corner(r, 400)
+			local sk = mk("UIStroke", { Thickness = th, Color = T.acc }, r)
+			tw(r, { Size = UDim2.fromOffset(820, 820) }, 0.7)
+			tw(sk, { Transparency = 1 }, 0.7)
+			task.delay(0.8, function()
+				pcall(function()
+					r:Destroy()
+				end)
+			end)
+		end
+
+		local tl, bi = 0, 1
+		local pulse, shake, flashA = 0, 0, 0
+		local ul, subA = 0, 0
+		local t0 = os.clock()
+		local done = false
+		local hb
+
+		local function finish()
+			if done then return end
+			done = true
+			if hb then
+				pcall(function()
+					hb:Disconnect()
+				end)
+			end
+			if snd then
+				pcall(function()
+					snd:Stop()
+					snd:Destroy()
+				end)
+			end
+			pcall(function()
+				ig:Destroy()
+			end)
+			if I.active and I.active.ig == ig then I.active = nil end
+		end
+		I.active = { ig = ig, finish = finish }
+
+		skip.MouseButton1Click:Connect(finish)
+
+		local function fire(b)
+			local s, kind = b[2], b[3]
+			pulse = math.max(pulse, 0.05 + 0.06 * s)
+			shake = math.max(shake, 6 * s)
+			flashA = math.max(flashA, math.min(0.1 * s, 0.35))
+			local a, z, amp = 1, #L, 0.3 * s
+			if kind == "a" then
+				a, z, amp = 1, 4, 1.6
+			elseif kind == "b" then
+				a, z, amp = 5, 10, 1.6
+			end
+			for i = a, z do
+				local e = L[i]
+				e.hit = tl + (i - a) * 0.035
+				e.amp = amp
+				if amp > 1 then e.rev = e.hit end
+			end
+			if kind == "drop" then
+				pulse = 0.35
+				shake = 26
+				flashA = 0.75
+				ring(6)
+				task.delay(0.12, function()
+					ring(3)
+				end)
+				spark(24, true)
+			elseif kind == "end" then
+				pulse = 0.3
+				shake = 20
+				flashA = 0.6
+				ring(5)
+				spark(18, true)
+			else
+				if s >= 1.2 then ring(2) end
+				spark(math.floor(4 * s) + 2, false)
+			end
+		end
+
+		local function step(dt)
+			if snd and snd.Parent and snd.IsPlaying then
+				tl = snd.TimePosition
+			else
+				tl = tl + dt
+			end
+			while beats[bi] and tl >= beats[bi][1] do
+				fire(beats[bi])
+				bi = bi + 1
+			end
+			local f = math.clamp((tl - f0) / (f1 - f0), 0, 1)
+			local el = os.clock() - t0
+			local fadeIn = math.clamp(el / 0.3, 0, 1)
+			pulse = pulse * math.exp(-dt * 7)
+			shake = shake * math.exp(-dt * 9)
+			flashA = flashA * math.exp(-dt * 8)
+			local sh = shake > 0.3 and shake or 0
+			stage.Position = UDim2.new(0.5, (math.random() - 0.5) * 2 * sh, 0.5, (math.random() - 0.5) * 2 * sh)
+			stage.Rotation = (math.random() - 0.5) * 0.3 * sh
+			sc.Scale = base * (1 + pulse) * (1 + f * 0.5)
+			fl.BackgroundTransparency = 1 - flashA
+			bg.BackgroundColor3 = T.bg:Lerp(T.acc, math.clamp(flashA * 0.35, 0, 0.3))
+			bg.BackgroundTransparency = math.max(1 - fadeIn, f)
+			for i, e in ipairs(L) do
+				local age = tl - e.hit
+				e.lb.TextTransparency = (tl >= e.rev) and f or 1
+				local d = age >= 0 and math.exp(-age * 5.5) or 0
+				e.w.Position = UDim2.new(0.5, e.x, 0.5, -10 - (age >= 0 and math.abs(math.sin(age * 12)) * 22 * d or 0))
+				e.w.Rotation = age >= 0 and math.sin(age * 10) * 7 * d * (i % 2 == 0 and 1 or -1) or 0
+				e.us.Scale = 1 + (age >= 0 and e.amp * math.exp(-age * 8) or 0)
+			end
+			if tl >= lineT then ul = math.min(1, ul + dt * 3.5) end
+			line.Size = UDim2.fromOffset(470 * ul, 4)
+			line.BackgroundTransparency = f
+			if tl >= subT then subA = math.min(1, subA + dt * 5) end
+			sub.TextTransparency = math.max(1 - subA, f)
+			skip.BackgroundTransparency = math.max(1 - fadeIn, f)
+			skip.TextTransparency = math.max(1 - fadeIn, f)
+			if tl >= f1 or el > sch.dur * k + 8 then finish() end
+		end
+
+		hb = RunService.Heartbeat:Connect(function(dt)
+			if done then return end
+			if not alive then
+				finish()
+				return
+			end
+			local ok = pcall(step, dt)
+			if not ok then finish() end
+		end)
+	end
+
+	-- spielt Intro n (laedt den Song vorher, falls noetig)
+	function I.play(n)
+		I.stop()
+		I.tok = I.tok + 1
+		local my = I.tok
+		local p = I.ensure(n)
+		if my ~= I.tok or not alive then return end
+		local snd
+		local gca = getcustomasset or getsynasset
+		if p and gca then
+			local ok, id = pcall(gca, p)
+			if ok and id then
+				snd = Instance.new("Sound")
+				snd.Volume = 0.6
+				snd.Looped = false
+				snd.SoundId = id
+				snd.Parent = game:GetService("SoundService")
+				snd.Ended:Connect(function()
+					pcall(function()
+						snd:Destroy()
+					end)
+				end)
+				snd:Play()
+				local w = os.clock()
+				while snd.Parent and not snd.IsPlaying and os.clock() - w < 8 do
+					task.wait(0.05)
+				end
+				if not snd.IsPlaying then
+					log("err", "Intro " .. n .. ": Song laesst sich nicht abspielen")
+					pcall(function()
+						snd:Destroy()
+					end)
+					snd = nil
+				end
+			else
+				log("err", "Intro: getcustomasset hat nicht geklappt")
+			end
+		elseif p then
+			log("warn", "Dieser Executor kann keine Audio-Dateien laden (getcustomasset fehlt)")
+		end
+		if my ~= I.tok or not alive then
+			if snd then
+				pcall(function()
+					snd:Destroy()
+				end)
+			end
+			return
+		end
+		local okFx, err = pcall(introFx, snd, n)
+		if not okFx then
+			log("err", "Intro-Fehler: " .. tostring(err))
+			if snd then
+				pcall(function()
+					snd:Destroy()
+				end)
+			end
+		end
+	end
+end
+
 -- THEMES
 local function updateTexts()
 	U.bTheme.Text = "Theme: " .. cfg.theme
 	U.bIntro.Text = "Intro: " .. INTRO_NAMES[cfg.intro]
+end
+
+local function setGrad()
+	local seq = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, T.acc),
+		ColorSequenceKeypoint.new(0.5, T.acc:Lerp(T.bg, 0.75)),
+		ColorSequenceKeypoint.new(1, T.acc),
+	})
+	U.grad.Color = seq
+	U.fbGrad.Color = seq
 end
 
 local function applyTheme(name, quick)
@@ -626,12 +1146,13 @@ local function applyTheme(name, quick)
 				e[1][e[2]] = T[e[3]]
 			end)
 		else
-			tw(e[1], { [e[2]] = T[e[3]] }, 0.3)
+			tw(e[1], { [e[2]] = T[e[3]] }, 0.4)
 		end
 	end
 	for _, f in ipairs(refreshers) do
-		pcall(f, false)
+		pcall(f, not quick)
 	end
+	setGrad()
 	updateTexts()
 	if not quick then save() end
 end
@@ -651,7 +1172,13 @@ on(U.bIntro.MouseButton1Click, function()
 	cfg.intro = INTRO_NEXT[cfg.intro]
 	updateTexts()
 	save()
-	log("info", "Intro-Auswahl: " .. INTRO_NAMES[cfg.intro] .. " (wird in Schritt 2 abgespielt)")
+	if cfg.intro == 0 then
+		I.stop()
+		log("info", "Intro: Aus")
+	else
+		log("info", "Intro-Auswahl: " .. INTRO_NAMES[cfg.intro] .. " (Vorschau laeuft)")
+		task.spawn(I.play, cfg.intro)
+	end
 end)
 
 on(U.bClear.MouseButton1Click, function()
@@ -673,18 +1200,27 @@ end)
 
 on(U.bMin.MouseButton1Click, function()
 	cfg.min = not cfg.min
-	layout()
+	layout(true)
 	save()
 end)
 
 on(U.bX.MouseButton1Click, function()
-	setOpen(false)
+	setOpen(false, true)
+end)
+
+-- RAHMEN-ANIMATION
+local rot = 0
+on(RunService.Heartbeat, function(dt)
+	rot = (rot + dt * 60) % 360
+	U.grad.Rotation = rot
+	U.fbGrad.Rotation = rot
 end)
 
 -- STOPPEN
 G.CodeSniperStop = function()
 	alive = false
 	saveNow()
+	pcall(I.stop)
 	for _, c in ipairs(conns) do
 		pcall(function()
 			c:Disconnect()
@@ -700,14 +1236,25 @@ on(U.bStop.MouseButton1Click, function()
 end)
 
 pcall(function()
-	on(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"), layout)
+	on(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"), function()
+		layout(false)
+	end)
 end)
 
 -- START
 applyTheme(cfg.theme, true)
 updateStatus()
-layout()
-setOpen(true)
+setOpen(true, false)
 log("ok", "Code Sniper geladen " .. VERSION)
 log("info", "Safe Mode: " .. (cfg.safe and "AN (nur simulieren)" or "AUS"))
 log("info", "Tipp: X schliesst die UI, der CS-Button holt sie zurueck")
+
+task.spawn(function()
+	local sel = cfg.intro
+	if sel ~= 0 then
+		I.play(sel)
+	end
+	for n = 1, 2 do
+		if n ~= sel then pcall(I.ensure, n) end
+	end
+end)
