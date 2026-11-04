@@ -1,4 +1,4 @@
--- Shox Hub Code Sniper | v1.0
+-- Shox Hub Code Sniper | v1.2 (stability repair)
 local S = {
 	Players = game:GetService("Players"),
 	UIS = game:GetService("UserInputService"),
@@ -13,7 +13,7 @@ if env.CodeSniperStop then pcall(env.CodeSniperStop) end
 
 local function RGB(r, g, b) return Color3.fromRGB(r, g, b) end
 local CS = {
-	Version = "v1.0",
+	Version = "v1.2",
 	Running = true,
 	Open = true,
 	Token = 0,
@@ -32,26 +32,25 @@ local CS = {
 	Recent = {},
 	LastCode = nil,
 	StaleAfter = 30,
-	Triggers = { "%f[%w]use%s*code%f[%W]", "%f[%w]code%s*is%f[%W]" },
+	FragmentToken = 0,
+	FragmentDelays = { 0.8, 1.4, 2.0 },
+	Triggers = { { "the", "code", "is" }, { "use", "code" }, { "code", "is" } },
 	Dir = "CodeSniper",
 	MusicDir = "CodeSniper/music",
 	File = "CodeSniper_settings.json",
 	Discord = "https://discord.gg/EA7xS26mA9",
 	IntroUrl = "https://files.catbox.moe/ocdxaf.ogg",
 	Settings = {
-		SafeMode = true, Sniper = false, Theme = "Frost", Scale = 2, Trans = 1, Intro = true,
-		Parts = 3, AutoSubmit = true, UseNotify = true,
+		SafeMode = true, Sniper = false, Theme = "Black", Scale = 2, Trans = 1, Intro = true,
+		FragmentDelay = 2, AutoSubmit = true, UseNotify = true,
 	},
 	Scales = { 0.85, 1, 1.2 },
 	ScaleNames = { "S", "M", "L" },
 	Trans = { 0, 0.2, 0.4 },
-	ThemeOrder = { "Black", "White", "Frost", "Natural", "Lava" },
+	ThemeOrder = { "Black", "White" },
 	Themes = {
 		Black = { bg = RGB(8, 8, 8), panel = RGB(26, 26, 28), accent = RGB(255, 255, 255), text = RGB(235, 235, 235), off = RGB(44, 44, 48), sub = RGB(125, 125, 130) },
 		White = { bg = RGB(250, 250, 252), panel = RGB(233, 233, 237), accent = RGB(10, 10, 12), text = RGB(22, 22, 24), off = RGB(205, 205, 212), sub = RGB(115, 115, 122) },
-		Frost = { bg = RGB(10, 22, 40), panel = RGB(24, 48, 80), accent = RGB(120, 200, 255), text = RGB(225, 242, 255), off = RGB(40, 64, 96), sub = RGB(170, 205, 235) },
-		Natural = { bg = RGB(10, 24, 14), panel = RGB(24, 52, 30), accent = RGB(90, 200, 90), text = RGB(225, 245, 225), off = RGB(40, 74, 50), sub = RGB(170, 210, 170) },
-		Lava = { bg = RGB(20, 8, 6), panel = RGB(52, 22, 14), accent = RGB(255, 100, 20), text = RGB(255, 225, 200), off = RGB(82, 38, 26), sub = RGB(255, 190, 150) },
 	},
 	LET = { "S", "H", "O", "X", "H", "U", "B" },
 	BEATS = {
@@ -61,7 +60,7 @@ local CS = {
 	FADE0 = 4.95,
 	FADE1 = 5.5,
 }
-CS.T = CS.Themes.Frost
+CS.T = CS.Themes.Black
 local U = { small = {}, ddItems = {} }
 
 pcall(makefolder, CS.Dir)
@@ -96,10 +95,10 @@ CS.load = function()
 			end
 		end
 	end)
-	if not CS.Themes[CS.Settings.Theme] then CS.Settings.Theme = "Frost" end
+	if CS.Settings.Theme ~= "Black" and CS.Settings.Theme ~= "White" then CS.Settings.Theme = "Black" end
 	if not CS.Scales[CS.Settings.Scale] then CS.Settings.Scale = 2 end
 	if not CS.Trans[CS.Settings.Trans] then CS.Settings.Trans = 1 end
-	if CS.Settings.Parts < 1 or CS.Settings.Parts > 6 then CS.Settings.Parts = 3 end
+	if CS.Settings.FragmentDelay < 1 or CS.Settings.FragmentDelay > #CS.FragmentDelays then CS.Settings.FragmentDelay = 2 end
 	CS.T = CS.Themes[CS.Settings.Theme]
 end
 
@@ -152,7 +151,7 @@ CS.updateStatus = function()
 	local isArmed = CS.armed()
 	local state = CS.Settings.Sniper and (isArmed and "Armed" or "Listening") or "Sniper off"
 	local mode = CS.Settings.SafeMode and "SAFE: types code, no submit" or "LIVE: types + submits"
-	U.status.Text = state .. " | " .. mode .. "\nWords " .. #CS.Buffer .. "/" .. CS.Settings.Parts .. "   Last: " .. (CS.LastCode or "-")
+	U.status.Text = state .. " | " .. mode .. "\nFragments " .. #CS.Buffer .. " | Last: " .. (CS.LastCode or "-")
 	if U.dot then
 		if not CS.Settings.Sniper then
 			U.dot.BackgroundColor3 = RGB(150, 150, 150)
@@ -221,8 +220,8 @@ CS.refresh = function()
 	CS.setToggle(U.sniper, "Sniper", CS.Settings.Sniper)
 	CS.setToggle(U.safe, "Safe Mode", CS.Settings.SafeMode)
 	CS.setToggle(U.auto, "Auto Submit", CS.Settings.AutoSubmit)
-	CS.setToggle(U.notify, "Notify", CS.Settings.UseNotify)
-	U.words.Text = "Collect words: " .. CS.Settings.Parts
+	CS.setToggle(U.notify, "Detect", CS.Settings.UseNotify)
+	U.words.Text = "Fragment wait: " .. string.format("%.1fs", CS.FragmentDelays[CS.Settings.FragmentDelay])
 	U.trans.Text = "Opacity: " .. math.floor((1 - CS.Trans[CS.Settings.Trans]) * 100 + 0.5) .. "%"
 	U.size.Text = "Size: " .. CS.ScaleNames[CS.Settings.Scale]
 	U.theme.Text = "Theme: " .. CS.Settings.Theme
@@ -238,12 +237,13 @@ CS.refresh = function()
 		CS.tw(entry[2], { Thickness = selected and 3 or 1 }, 0.3)
 	end
 	U.fab.BackgroundColor3 = T.accent
+	U.fab.BackgroundTransparency = CS.Trans[CS.Settings.Trans]
 	U.fab.TextColor3 = T.bg
 	U.fabStroke.Color = T.text
 	CS.updateStatus()
 end
 
-CS.DDH = math.ceil(#CS.ThemeOrder / 2) * 32 - 6 + 8
+CS.DDH = math.ceil(#CS.ThemeOrder / 2) * 32 + 8
 
 CS.setDD = function(open)
 	CS.ddOpen = open
@@ -270,12 +270,12 @@ CS.drag = function(handle, target, onTap)
 		if CS.isIn(input) then
 			dragging, moved = true, false
 			startPoint, startPos = input.Position, target.Position
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-					if onTap and not moved then onTap() end
-				end
-			end)
+		end
+	end)
+	CS.on(handle.InputEnded, function(input)
+		if CS.isIn(input) and dragging then
+			dragging = false
+			if onTap and not moved then onTap() end
 		end
 	end)
 	CS.on(S.UIS.InputChanged, function(input)
@@ -365,10 +365,9 @@ CS.introFx = function(snd)
 		if done then return end
 		done = true
 		if hb then hb:Disconnect() end
-		if stop then
-			pcall(function() snd:Stop() snd:Destroy() end)
-			if CS.introS == snd then CS.introS = nil end
-		end
+		if CS.introHeartbeat == hb then CS.introHeartbeat = nil end
+		pcall(function() snd:Stop() snd:Destroy() end)
+		if CS.introS == snd then CS.introS = nil end
 		if CS.introG == ig then CS.introG = nil end
 		ig:Destroy()
 	end
@@ -438,6 +437,7 @@ CS.introFx = function(snd)
 		skS.Transparency = math.max(0.55, f)
 		if tl >= CS.FADE1 then finish(false) end
 	end)
+	CS.introHeartbeat = hb
 end
 
 CS.findIntro = function()
@@ -514,8 +514,7 @@ CS.ensureIntro = function()
 		task.wait(1)
 	end
 	if not data then
-		if have then pcall(delfile, have) end
-		CS.log("Intro: download failed")
+		CS.log("Intro: download failed; keeping existing file if available")
 		return
 	end
 	for _, other in ipairs({ "ogg", "mp3" }) do
@@ -529,6 +528,10 @@ CS.ensureIntro = function()
 end
 
 CS.stopIntro = function()
+	if CS.introHeartbeat then
+		pcall(function() CS.introHeartbeat:Disconnect() end)
+		CS.introHeartbeat = nil
+	end
 	pcall(function() if CS.introS then CS.introS:Stop() CS.introS:Destroy() end end)
 	pcall(function() if CS.introG then CS.introG:Destroy() end end)
 	CS.introS, CS.introG = nil, nil
@@ -573,13 +576,21 @@ CS.collect = function(...)
 	return out
 end
 
--- Trigger phrases: "use code" / "code is" in any case and with any punctuation.
--- Returns the text after the trigger (may be ""), or nil when there is no trigger.
+-- Finds trigger words against their ORIGINAL character positions.
+-- Supports case changes and punctuation between words without corrupting offsets.
 CS.trigger = function(text)
-	local flat = (text:gsub("[^%w]", " ")):lower()
-	for _, pat in ipairs(CS.Triggers) do
-		local _, e = flat:find(pat)
-		if e then return text:sub(e + 1) end
+	local words = {}
+	for first, word, after in text:gmatch("()([%w]+)()") do
+		words[#words + 1] = { value = word:lower(), first = first, last = after - 1 }
+	end
+	for _, phrase in ipairs(CS.Triggers) do
+		for i = 1, #words - #phrase + 1 do
+			local matched = true
+			for j = 1, #phrase do
+				if words[i + j - 1].value ~= phrase[j] then matched = false break end
+			end
+			if matched then return text:sub(words[i + #phrase - 1].last + 1) end
+		end
 	end
 	return nil
 end
@@ -635,26 +646,11 @@ CS.prime = function()
 	end
 end
 
+-- Use Roblox's public GuiButton:Activate() API; no private executor signal hooks.
 CS.press = function(btn)
-	local names = { "Activated", "MouseButton1Click", "MouseButton1Down" }
-	if getconnections then
-		for _, name in ipairs(names) do
-			local okC, conns = pcall(getconnections, btn[name])
-			if okC and type(conns) == "table" and #conns > 0 then
-				local fired = false
-				for _, conn in ipairs(conns) do
-					if pcall(function() conn:Fire() end) then fired = true end
-				end
-				if fired then return true end
-			end
-		end
-	end
-	if firesignal then
-		for _, name in ipairs(names) do
-			if pcall(firesignal, btn[name]) then return true end
-		end
-	end
-	return false
+	if not (btn and btn:IsA("GuiButton")) then return false end
+	local ok = pcall(function() btn:Activate() end)
+	return ok
 end
 
 CS.redeem = function(code, submit)
@@ -668,35 +664,31 @@ CS.redeem = function(code, submit)
 		CS.Btn = btn
 	end
 	if btn and CS.press(btn) then return true, "button " .. btn.Name end
-	if getconnections then
-		local okC, conns = pcall(getconnections, box.FocusLost)
-		if okC and type(conns) == "table" and #conns > 0 then
-			for _, conn in ipairs(conns) do pcall(function() conn:Fire(true) end) end
-			return true, "FocusLost"
-		end
-	end
-	if firesignal and pcall(firesignal, box.FocusLost, true) then return true, "FocusLost" end
-	return false, "could not trigger submit"
+	return false, "button activation unavailable; click Redeem manually"
 end
 
 -- Runs instantly in the same frame (no task.spawn, no wait)
 CS.submit = function(code, source, force)
+	code = tostring(code or ""):gsub("%s+", "")
+	if code == "" then return end
 	local now = os.clock()
 	if not force and CS.Recent[code] and now - CS.Recent[code] < 30 then return end
-	CS.Recent[code] = now
 	CS.LastCode = code
-	local live = force or not CS.Settings.SafeMode
-	local okR, ok, how = pcall(CS.redeem, code, live)
-	if not okR then
-		ok, how = false, ok
+	local live = not CS.Settings.SafeMode
+	local callOk, succeeded, detail = pcall(CS.redeem, code, live)
+	if not callOk then
+		succeeded, detail = false, succeeded
 	end
-	CS.log("Code: " .. code .. " (" .. source .. ")")
-	if not ok then
-		CS.log("Failed: " .. tostring(how))
-	elseif live then
-		CS.log("Submitted via " .. how)
+	CS.log("Code: " .. code .. " (" .. tostring(source) .. ")")
+	if not succeeded then
+		CS.log("Redeem action unavailable: " .. tostring(detail))
 	else
-		CS.log("SAFE: typed in box, NOT sent. Press Submit Last")
+		CS.Recent[code] = now
+		if live then
+			CS.log("Redeem button activated via Roblox GUI")
+		else
+			CS.log("SAFE: code filled; click Redeem in the game")
+		end
 	end
 	CS.updateStatus()
 end
@@ -714,35 +706,49 @@ end
 CS.arm = function(src)
 	CS.Armed = os.clock()
 	CS.Buffer = {}
-	CS.log("Trigger (" .. src .. "): collecting")
+	CS.FragmentToken = CS.FragmentToken + 1
+	CS.log("Trigger (" .. src .. "): collecting fragments")
 	CS.updateStatus()
 end
 
--- A single word/piece. Only counts while armed by a trigger.
+-- Collects a variable number of code fragments. A short quiet period marks completion.
+CS.finishBuffer = function(token)
+	if token ~= CS.FragmentToken or not CS.armed() or #CS.Buffer == 0 then return end
+	local code = table.concat(CS.Buffer)
+	CS.Buffer = {}
+	CS.Armed = nil
+	CS.log("Fragments complete: " .. code)
+	CS.deliver(code)
+end
+
+local STOP_WORDS = {
+	to = true, for = true, redeem = true, now = true, code = true,
+	below = true, here = true, please = true, use = true, the = true,
+}
 CS.onPiece = function(text, src)
 	if not CS.armed() then return end
-	text = CS.strip(text)
-	if text == "" then return end
-	if text:find("%s") then
-		CS.log("Ignored: " .. text)
-		return
+	local added = 0
+	for tok in tostring(text):gmatch("[%w_+%-]+") do
+		local piece = CS.strip(tok)
+		if piece ~= "" and #piece <= 32 and not STOP_WORDS[piece:lower()] then
+			table.insert(CS.Buffer, piece)
+			added = added + 1
+		end
 	end
+	if added == 0 then return end
 	CS.Armed = os.clock()
-	table.insert(CS.Buffer, text)
-	CS.log("Word " .. #CS.Buffer .. "/" .. CS.Settings.Parts .. ": " .. text .. " (" .. tostring(src) .. ")")
-	if #CS.Buffer >= CS.Settings.Parts then
-		local code = table.concat(CS.Buffer)
-		CS.Buffer = {}
-		CS.Armed = nil
-		CS.deliver(code)
-		return
-	end
+	CS.FragmentToken = CS.FragmentToken + 1
+	local token = CS.FragmentToken
+	CS.log("Fragment(s) " .. #CS.Buffer .. " (" .. tostring(src) .. "): " .. tostring(text))
 	CS.updateStatus()
+	task.delay(CS.FragmentDelays[CS.Settings.FragmentDelay], function()
+		if CS.Running then CS.finishBuffer(token) end
+	end)
 end
 
--- Every detected text (remote or GUI) goes through here
+-- Trigger payloads stop at the first code token; trailing prose is discarded.
 CS.onText = function(text, src)
-	if not CS.Settings.Sniper or not CS.Settings.UseNotify then return end
+	if not CS.Settings.Sniper then return end
 	text = CS.clean(text)
 	if text == "" then return end
 	local now = os.clock()
@@ -750,151 +756,94 @@ CS.onText = function(text, src)
 		CS.Seen = {}
 		CS.SeenT = now
 	end
-	if CS.Seen[text] and now - CS.Seen[text] < 1.25 then return end
+	if CS.Seen[text] and now - CS.Seen[text] < 0.35 then return end
 	CS.Seen[text] = now
 	local rest = CS.trigger(text)
-	if rest == nil then
-		CS.onPiece(text, src)
+	if rest ~= nil then
+		local firstCode
+		for tok in rest:gmatch("[%w_+%-]+") do
+			local candidate = CS.strip(tok)
+			if candidate ~= "" and not STOP_WORDS[candidate:lower()] then
+				firstCode = candidate
+				break
+			end
+		end
+		if firstCode then
+			CS.Buffer = {}
+			CS.Armed = nil
+			CS.FragmentToken = CS.FragmentToken + 1
+			CS.deliver(firstCode)
+		else
+			CS.arm(src)
+		end
 		return
 	end
-	CS.arm(src)
-	local tokens = {}
-	for tok in rest:gmatch("%S+") do
-		local word = CS.strip(tok)
-		if word ~= "" then tokens[#tokens + 1] = word end
-	end
-	if #tokens > 0 then
-		CS.Armed = nil
-		CS.Buffer = {}
-		CS.deliver(table.concat(tokens))
-	end
+	CS.onPiece(text, src)
 end
 
-CS.hookRemote = function(remote)
-	if CS.Hooked[remote] then return end
-	CS.Hooked[remote] = true
-	CS.Found = CS.Found + 1
-	CS.on(remote.OnClientEvent, function(...)
-		if not CS.Settings.Sniper then return end
-		local ok, list = pcall(CS.collect, ...)
-		if not ok then return end
-		local hit = false
-		for _, text in ipairs(list) do
-			if CS.trigger(text) ~= nil then
-				hit = true
-				CS.onText(text, "remote")
-			end
-		end
-		if not hit and list[1] then CS.onText(list[1], "remote") end
-	end)
-	CS.log("Hooked remote: " .. remote.Name)
-	CS.updateStatus()
+-- Screen text is the detector source. No private remote introspection is used.
+CS.hookRemote = function()
+	return false
 end
-
 CS.scanNotify = function()
-	local getups = getupvalues or (debug and debug.getupvalues)
-	pcall(function()
-		local ctrl = S.Rep:FindFirstChild("Controllers")
-		ctrl = ctrl and ctrl:FindFirstChild("NotificationController")
-		if ctrl and ctrl:IsA("ModuleScript") and getups then
-			local mod = require(ctrl)
-			if type(mod) == "table" then
-				for _, fn in pairs(mod) do
-					if type(fn) == "function" then
-						local okU, ups = pcall(getups, fn)
-						if okU and type(ups) == "table" then
-							for _, up in pairs(ups) do
-								if typeof(up) == "Instance" and up:IsA("RemoteEvent") then
-									CS.hookRemote(up)
-								elseif type(up) == "table" then
-									for _, inner in pairs(up) do
-										if typeof(inner) == "Instance" and inner:IsA("RemoteEvent") then CS.hookRemote(inner) end
-									end
-								end
-							end
-						end
-					end
-				end
-			end
-		end
-	end)
-	pcall(function()
-		local packages = S.Rep:FindFirstChild("Packages")
-		local net = packages and packages:FindFirstChild("Net")
-		if not (net and getconnections) then return end
-		for _, remote in ipairs(net:GetDescendants()) do
-			if remote:IsA("RemoteEvent") then
-				local okC, conns = pcall(getconnections, remote.OnClientEvent)
-				if okC and type(conns) == "table" then
-					for _, conn in ipairs(conns) do
-						local okF, fn = pcall(function() return conn.Function end)
-						if okF and type(fn) == "function" then
-							local matched = false
-							local okS, src = pcall(function() return debug.getinfo(fn, "s").source end)
-							if okS and type(src) == "string" and src:find("NotificationController", 1, true) then matched = true end
-							if not matched then
-								local okE, fenv = pcall(getfenv, fn)
-								if okE and type(fenv) == "table" then
-									local scr = rawget(fenv, "script")
-									matched = typeof(scr) == "Instance" and scr.Name == "NotificationController"
-								end
-							end
-							if matched then
-								CS.hookRemote(remote)
-								break
-							end
-						end
-					end
-				end
-			end
-		end
-	end)
-	pcall(function()
-		if CS.Found > 0 then return end
-		for _, remote in ipairs(S.Rep:GetDescendants()) do
-			if remote:IsA("RemoteEvent") and remote.Name:lower():find("notif", 1, true) then CS.hookRemote(remote) end
-		end
-	end)
+	return false
 end
-
 CS.discover = function()
-	if CS.Discovering or CS.Found > 0 then return end
-	CS.Discovering = true
-	task.spawn(function()
-		for _ = 1, 6 do
-			if not CS.Running then break end
-			CS.scanNotify()
-			if CS.Found > 0 then break end
-			task.wait(2)
-		end
-		CS.Discovering = false
-		if CS.Found == 0 then CS.log("No notification remote found (GUI watcher still active)") end
-		CS.updateStatus()
-	end)
+	if CS.Running then CS.log("Screen detector active; private remote scanning disabled") end
 end
 
--- Second detection path: watches new text labels that appear in the game UI.
--- Waits until the text stops changing so typewriter-style notifications are read complete.
 CS.hookGui = function()
 	local pg = S.Players.LocalPlayer:FindFirstChild("PlayerGui") or S.Players.LocalPlayer:WaitForChild("PlayerGui", 10)
 	if not pg then return end
-	CS.on(pg.DescendantAdded, function(d)
-		if not CS.Settings.Sniper or not d:IsA("TextLabel") then return end
+	CS.GuiWatched = CS.GuiWatched or setmetatable({}, { __mode = "k" })
+
+	local function bindText(d)
+		if not (d:IsA("TextLabel") or d:IsA("TextButton")) then return end
+		if CS.GuiWatched[d] then return end
 		if U.gui and d:IsDescendantOf(U.gui) then return end
 		if CS.introG and d:IsDescendantOf(CS.introG) then return end
-		if d:GetFullName():lower():find("prompt", 1, true) then return end
-		local ver = 0
-		local function check()
-			ver = ver + 1
-			local mine = ver
-			task.delay(0.15, function()
-				if CS.Running and mine == ver and d.Text ~= "" then CS.onText(d.Text, "gui") end
+		local path = d:GetFullName():lower()
+		if path:find("prompt", 1, true) then return end
+		CS.GuiWatched[d] = true
+
+		local version, previous, triggerSeen = 0, nil, false
+		local function check(isInitial)
+			if not CS.Settings.Sniper then return end
+			version = version + 1
+			local mine = version
+			task.delay(0.12, function()
+				if not CS.Running or not CS.Settings.Sniper or not d.Parent or mine ~= version then return end
+				local value = CS.clean(d.Text)
+				if value == "" or value == previous then return end
+				local old = previous
+				previous = value
+				if CS.trigger(value) ~= nil then
+					if old and value:sub(1, #old) == old and triggerSeen then
+						local suffix = CS.clean(value:sub(#old + 1))
+						if suffix ~= "" then CS.onPiece(suffix, "screen-update") end
+					else
+						triggerSeen = true
+						CS.onText(value, "screen")
+					end
+					return
+				end
+				if old and value:sub(1, #old) == old and triggerSeen then
+					local suffix = CS.clean(value:sub(#old + 1))
+					if suffix ~= "" then CS.onPiece(suffix, "screen-update") end
+				elseif not isInitial or CS.armed() then
+					CS.onText(value, "screen")
+				end
 			end)
 		end
-		check()
-		local conn = d:GetPropertyChangedSignal("Text"):Connect(check)
-		task.delay(3, function() conn:Disconnect() end)
-	end)
+
+		-- Existing unrelated UI text is ignored until a trigger arms the detector.
+		check(true)
+		local conn = d:GetPropertyChangedSignal("Text"):Connect(function() check(false) end)
+		CS.Conn[#CS.Conn + 1] = conn
+	end
+
+	for _, d in ipairs(pg:GetDescendants()) do bindText(d) end
+	CS.on(pg.DescendantAdded, function(d) bindText(d) end)
 end
 
 CS.stop = function()
@@ -999,8 +948,8 @@ CS.make("UICorner", { CornerRadius = UDim.new(0, 9) }, U.manual)
 CS.make("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, U.manual)
 
 local submitRow = CS.row(34)
-U.submitManual = CS.button(submitRow, "Submit Manual", 1, 2)
-U.submitLast = CS.button(submitRow, "Submit Last", 2, 2)
+U.submitManual = CS.button(submitRow, "Redeem Manual", 1, 2)
+U.submitLast = CS.button(submitRow, "Redeem Last", 2, 2)
 
 local optRow1 = CS.row(34)
 U.trans = CS.button(optRow1, "", 1, 2)
@@ -1076,17 +1025,18 @@ CS.on(U.safe.MouseButton1Click, function()
 	CS.updateStatus()
 end)
 CS.on(U.words.MouseButton1Click, function()
-	CS.Settings.Parts = CS.Settings.Parts % 6 + 1
+	CS.Settings.FragmentDelay = CS.Settings.FragmentDelay % #CS.FragmentDelays + 1
 	CS.Buffer = {}
+	CS.FragmentToken = CS.FragmentToken + 1
 	CS.refresh()
 	CS.save()
-	CS.log("Collect " .. CS.Settings.Parts .. " word(s), then submit")
+	CS.log("Fragment quiet period: " .. string.format("%.1fs", CS.FragmentDelays[CS.Settings.FragmentDelay]))
 end)
 CS.on(U.auto.MouseButton1Click, function()
 	CS.Settings.AutoSubmit = not CS.Settings.AutoSubmit
 	CS.setToggle(U.auto, "Auto Submit", CS.Settings.AutoSubmit)
 	CS.save()
-	CS.log(CS.Settings.AutoSubmit and ("Auto Submit ON: after " .. CS.Settings.Parts .. " words") or "Auto Submit OFF: use Submit Last")
+	CS.log(CS.Settings.AutoSubmit and "Auto Submit ON: after fragment collection" or "Auto Submit OFF: use Submit Last")
 end)
 CS.on(U.notify.MouseButton1Click, function()
 	CS.Settings.UseNotify = not CS.Settings.UseNotify
@@ -1157,9 +1107,4 @@ CS.log("Safe Mode: " .. (CS.Settings.SafeMode and "ON (types, no send)" or "OFF 
 CS.setOpen(true)
 task.spawn(function() pcall(CS.hookGui) end)
 
--- Remote scan runs after the intro so it cannot cause lag during it
-task.spawn(function()
-	local started = os.clock()
-	while CS.Running and (not CS.IntroDone or CS.introG) and os.clock() - started < 15 do task.wait(0.1) end
-	if CS.Running then CS.discover() end
-end)
+-- Detection is handled by the PlayerGui screen-text watcher above.
