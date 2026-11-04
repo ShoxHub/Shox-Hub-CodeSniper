@@ -1,4 +1,4 @@
--- Shox Hub Code Sniper | v1.2 (stability repair)
+-- Shox Hub Code Sniper | v1.3 (verification fixes)
 local S = {
 	Players = game:GetService("Players"),
 	UIS = game:GetService("UserInputService"),
@@ -13,7 +13,7 @@ if env.CodeSniperStop then pcall(env.CodeSniperStop) end
 
 local function RGB(r, g, b) return Color3.fromRGB(r, g, b) end
 local CS = {
-	Version = "v1.2",
+	Version = "v1.3",
 	Running = true,
 	Open = true,
 	Token = 0,
@@ -95,7 +95,7 @@ CS.load = function()
 			end
 		end
 	end)
-	if CS.Settings.Theme ~= "Black" and CS.Settings.Theme ~= "White" then CS.Settings.Theme = "Black" end
+	if not CS.Themes[CS.Settings.Theme] then CS.Settings.Theme = "Black" end
 	if not CS.Scales[CS.Settings.Scale] then CS.Settings.Scale = 2 end
 	if not CS.Trans[CS.Settings.Trans] then CS.Settings.Trans = 1 end
 	if CS.Settings.FragmentDelay < 1 or CS.Settings.FragmentDelay > #CS.FragmentDelays then CS.Settings.FragmentDelay = 2 end
@@ -648,7 +648,11 @@ end
 
 -- Use Roblox's public GuiButton:Activate() API; no private executor signal hooks.
 CS.press = function(btn)
-	if not (btn and btn:IsA("GuiButton")) then return false end
+	if not (btn and btn.Parent and btn:IsA("GuiButton")) then return false end
+	local okState, interactable = pcall(function()
+		return btn.Visible and btn.Active and btn.Interactable
+	end)
+	if not okState or not interactable then return false end
 	local ok = pcall(function() btn:Activate() end)
 	return ok
 end
@@ -672,9 +676,14 @@ CS.submit = function(code, source, force)
 	code = tostring(code or ""):gsub("%s+", "")
 	if code == "" then return end
 	local now = os.clock()
-	if not force and CS.Recent[code] and now - CS.Recent[code] < 30 then return end
-	CS.LastCode = code
 	local live = not CS.Settings.SafeMode
+	if force then
+		if CS.LastManualAt and now - CS.LastManualAt < 2 then return end
+		CS.LastManualAt = now
+	elseif live and CS.Recent[code] and now - CS.Recent[code] < 30 then
+		return
+	end
+	CS.LastCode = code
 	local callOk, succeeded, detail = pcall(CS.redeem, code, live)
 	if not callOk then
 		succeeded, detail = false, succeeded
@@ -683,9 +692,9 @@ CS.submit = function(code, source, force)
 	if not succeeded then
 		CS.log("Redeem action unavailable: " .. tostring(detail))
 	else
-		CS.Recent[code] = now
 		if live then
-			CS.log("Redeem button activated via Roblox GUI")
+			CS.Recent[code] = now
+			CS.log("Redeem activation requested; game acceptance not confirmed")
 		else
 			CS.log("SAFE: code filled; click Redeem in the game")
 		end
@@ -726,7 +735,7 @@ local STOP_WORDS = {
 	below = true, here = true, please = true, use = true, the = true,
 }
 CS.onPiece = function(text, src)
-	if not CS.armed() then return end
+	if not CS.Settings.Sniper or not CS.Settings.UseNotify or not CS.armed() then return end
 	local added = 0
 	for tok in tostring(text):gmatch("[%w_+%-]+") do
 		local piece = CS.strip(tok)
@@ -748,7 +757,7 @@ end
 
 -- Trigger payloads stop at the first code token; trailing prose is discarded.
 CS.onText = function(text, src)
-	if not CS.Settings.Sniper then return end
+	if not CS.Settings.Sniper or not CS.Settings.UseNotify then return end
 	text = CS.clean(text)
 	if text == "" then return end
 	local now = os.clock()
@@ -797,7 +806,7 @@ CS.hookGui = function()
 	if not pg then return end
 	CS.GuiWatched = CS.GuiWatched or setmetatable({}, { __mode = "k" })
 
-	local function bindText(d)
+	local function bindText(d, isInitial)
 		if not (d:IsA("TextLabel") or d:IsA("TextButton")) then return end
 		if CS.GuiWatched[d] then return end
 		if U.gui and d:IsDescendantOf(U.gui) then return end
@@ -820,7 +829,8 @@ CS.hookGui = function()
 				if CS.trigger(value) ~= nil then
 					if old and value:sub(1, #old) == old and triggerSeen then
 						local suffix = CS.clean(value:sub(#old + 1))
-						if suffix ~= "" then CS.onPiece(suffix, "screen-update") end
+						local first = suffix:match("[%w_+%-]+")
+						if first and #first <= 32 then CS.onPiece(first, "screen-update") end
 					else
 						triggerSeen = true
 						CS.onText(value, "screen")
@@ -829,7 +839,8 @@ CS.hookGui = function()
 				end
 				if old and value:sub(1, #old) == old and triggerSeen then
 					local suffix = CS.clean(value:sub(#old + 1))
-					if suffix ~= "" then CS.onPiece(suffix, "screen-update") end
+					local first = suffix:match("[%w_+%-]+")
+					if first and #first <= 32 then CS.onPiece(first, "screen-update") end
 				elseif not isInitial or CS.armed() then
 					CS.onText(value, "screen")
 				end
@@ -837,13 +848,14 @@ CS.hookGui = function()
 		end
 
 		-- Existing unrelated UI text is ignored until a trigger arms the detector.
-		check(true)
+		check(isInitial == true)
 		local conn = d:GetPropertyChangedSignal("Text"):Connect(function() check(false) end)
-		CS.Conn[#CS.Conn + 1] = conn
+		CS.GuiConnections = CS.GuiConnections or setmetatable({}, { __mode = "k" })
+		CS.GuiConnections[d] = conn
 	end
 
-	for _, d in ipairs(pg:GetDescendants()) do bindText(d) end
-	CS.on(pg.DescendantAdded, function(d) bindText(d) end)
+	for _, d in ipairs(pg:GetDescendants()) do bindText(d, true) end
+	CS.on(pg.DescendantAdded, function(d) bindText(d, false) end)
 end
 
 CS.stop = function()
@@ -852,6 +864,10 @@ CS.stop = function()
 	pcall(CS.save)
 	CS.stopIntro()
 	for _, conn in ipairs(CS.Conn) do pcall(function() conn:Disconnect() end) end
+	if CS.GuiConnections then
+		for _, conn in pairs(CS.GuiConnections) do pcall(function() conn:Disconnect() end) end
+		CS.GuiConnections = nil
+	end
 	pcall(function() U.gui:Destroy() end)
 	env.CodeSniperStop = nil
 end
@@ -1010,6 +1026,7 @@ CS.on(U.sniper.MouseButton1Click, function()
 	CS.save()
 	CS.Buffer = {}
 	CS.Armed = nil
+	CS.FragmentToken = CS.FragmentToken + 1
 	CS.log(CS.Settings.Sniper and "Sniper ON: waiting for trigger" or "Sniper OFF")
 	if CS.Settings.Sniper then
 		CS.discover()
@@ -1040,8 +1057,13 @@ CS.on(U.auto.MouseButton1Click, function()
 end)
 CS.on(U.notify.MouseButton1Click, function()
 	CS.Settings.UseNotify = not CS.Settings.UseNotify
-	CS.setToggle(U.notify, "Notify", CS.Settings.UseNotify)
+	CS.setToggle(U.notify, "Detect", CS.Settings.UseNotify)
 	CS.save()
+	CS.Buffer = {}
+	CS.Armed = nil
+	CS.FragmentToken = CS.FragmentToken + 1
+	CS.log(CS.Settings.UseNotify and "Detect ON" or "Detect OFF")
+	CS.updateStatus()
 end)
 CS.on(U.submitManual.MouseButton1Click, function()
 	local code = (CS.clean(U.manual.Text):gsub("%s+", ""))
