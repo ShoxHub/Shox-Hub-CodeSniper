@@ -1,7 +1,5 @@
 -- =====================================================================
--- Shox CODE REDEEMER
--- Watches notifications for code phrases, captures words, types them
--- into the redemption UI, and submits. Includes trait farm utilities.
+-- Shox CODE REDEEMER  —  B/W Edition  +  CTD-Style Intro  +  Rounded
 -- =====================================================================
 
 -- ─── Services ─────────────────────────────────────────────────────────
@@ -12,17 +10,342 @@ local UserInputService  = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService      = game:GetService("TweenService")
 local Workspace         = game:GetService("Workspace")
+local SoundService      = game:GetService("SoundService")
+local HttpService       = game:GetService("HttpService")
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
+repeat task.wait() until game:IsLoaded()
+
 -- =====================================================================
--- CONFIG PERSISTENCE — load/save simple key=value text file
+-- INTRO — 1:1 aus ShoxHub_CTD, in Schwarz/Weiß
+-- =====================================================================
+local ShoxIntro = {
+    Running = true,
+    Letters = {"S", "H", "O", "X", "H", "U", "B"},
+    Beats = {
+        {0.05, 1, "a"}, {0.52, 1, "b"}, {0.84, 0.6}, {1.28, 0.9},
+        {1.58, 0.5}, {1.88, 0.9}, {2.11, 0.6}, {2.48, 2.2, "drop"},
+        {3.15, 1}, {3.74, 1}, {4.34, 1.2}, {4.75, 1.7, "end"},
+    },
+    IntroUrl = "https://files.catbox.moe/ocdxaf.ogg",
+    Dir = "CodeSniper",
+    MusicDir = "CodeSniper/music",
+}
+local ShoxIntroGui, ShoxIntroSound, ShoxIntroHeartbeat
+
+local function shoxIntroMake(className, props, parent)
+    local obj = Instance.new(className)
+    for k, v in pairs(props) do obj[k] = v end
+    if parent then obj.Parent = parent end
+    return obj
+end
+
+local function shoxIntroTween(obj, props, duration, style, direction)
+    if not obj or not obj.Parent then return nil end
+    local tween = TweenService:Create(
+        obj,
+        TweenInfo.new(duration or 0.25, style or Enum.EasingStyle.Quint, direction or Enum.EasingDirection.Out),
+        props
+    )
+    tween:Play()
+    return tween
+end
+
+local function shoxIntroParent()
+    local ok, hui = pcall(function() return gethui and gethui() end)
+    if ok and hui then return hui end
+    local pg = player:FindFirstChildOfClass("PlayerGui")
+    return pg or game:GetService("CoreGui")
+end
+
+local function shoxIntroFinish()
+    ShoxIntro.Running = false
+    if ShoxIntroHeartbeat then ShoxIntroHeartbeat:Disconnect(); ShoxIntroHeartbeat = nil end
+    if ShoxIntroSound then
+        pcall(function() ShoxIntroSound:Stop(); ShoxIntroSound:Destroy() end)
+        ShoxIntroSound = nil
+    end
+    if ShoxIntroGui then
+        local gui = ShoxIntroGui
+        ShoxIntroGui = nil
+        shoxIntroTween(gui:FindFirstChild("IntroBG"), {BackgroundTransparency = 1}, 0.25)
+        for _, obj in ipairs(gui:GetDescendants()) do
+            if obj:IsA("TextLabel") then
+                shoxIntroTween(obj, {TextTransparency = 1}, 0.2)
+            elseif obj:IsA("Frame") and obj.Name ~= "IntroBG" then
+                shoxIntroTween(obj, {BackgroundTransparency = 1}, 0.2)
+            end
+        end
+        task.delay(0.28, function()
+            if gui and gui.Parent then gui:Destroy() end
+        end)
+    end
+end
+
+local function shoxIntroSpark(stage, letters, count, wide, accent)
+    for _ = 1, count do
+        local angle = math.random() * math.pi * 2
+        local distance = (wide and 260 or 130) * (0.4 + math.random() * 0.8)
+        local x = letters[math.random(1, #letters)].x
+        local particle = shoxIntroMake("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0.5, x, 0.5, -10),
+            Size = UDim2.fromOffset(6, 6),
+            Rotation = math.random(0, 90),
+            BackgroundColor3 = accent,
+            BorderSizePixel = 0,
+        }, stage)
+        shoxIntroTween(particle, {
+            Position = UDim2.new(0.5, x + math.cos(angle) * distance, 0.5, -10 + math.sin(angle) * distance),
+            BackgroundTransparency = 1,
+            Size = UDim2.fromOffset(2, 2),
+        }, 0.55)
+        task.delay(0.6, function()
+            if particle and particle.Parent then particle:Destroy() end
+        end)
+    end
+end
+
+local function shoxIntroRing(stage, accent, thickness)
+    local ring = shoxIntroMake("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0.5, -10),
+        Size = UDim2.fromOffset(40, 40),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+    }, stage)
+    shoxIntroMake("UICorner", {CornerRadius = UDim.new(1, 0)}, ring)
+    local stroke = shoxIntroMake("UIStroke", {Thickness = thickness, Color = accent}, ring)
+    shoxIntroTween(ring, {Size = UDim2.fromOffset(820, 820)}, 0.7)
+    shoxIntroTween(stroke, {Transparency = 1}, 0.7)
+    task.delay(0.8, function()
+        if ring and ring.Parent then ring:Destroy() end
+    end)
+end
+
+local function shoxIntroPlay()
+    -- Schwarz/Weiß Akzente
+    local accent   = Color3.fromRGB(255, 255, 255)
+    local subColor = Color3.fromRGB(200, 200, 200)
+    local bgColor  = Color3.fromRGB(0, 0, 0)
+
+    local introParent = shoxIntroParent()
+    pcall(function()
+        local old = introParent:FindFirstChild("ShoxHubIntro") or introParent:FindFirstChild("ShoxCodeSniperIntro")
+        if old then old:Destroy() end
+    end)
+    local gui = shoxIntroMake("ScreenGui", {
+        Name = "ShoxHubIntro",
+        ResetOnSpawn = false,
+        IgnoreGuiInset = true,
+        DisplayOrder = 2000005,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    }, introParent)
+    pcall(function() if syn and syn.protect_gui then syn.protect_gui(gui) end end)
+    ShoxIntroGui = gui
+
+    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
+    local base = math.clamp(math.min(viewport.X * 0.6 / 376, viewport.Y * 0.4 / 80), 0.5, 3)
+    local bg = shoxIntroMake("Frame", {
+        Name = "IntroBG", Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = bgColor,
+        BackgroundTransparency = 1, BorderSizePixel = 0, Active = false,
+    }, gui)
+    shoxIntroTween(bg, {BackgroundTransparency = 0}, 0.3)
+
+    local stage = shoxIntroMake("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Active = false,
+    }, gui)
+    local stageScale = shoxIntroMake("UIScale", {Scale = base}, stage)
+    local letters = {}
+    for i, character in ipairs(ShoxIntro.Letters) do
+        local x = -163 + (i - 1) * 50 + (i >= 5 and 26 or 0)
+        local wrap = shoxIntroMake("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0.5, x, 0.5, -10),
+            Size = UDim2.fromOffset(50, 80),
+            BackgroundTransparency = 1, BorderSizePixel = 0, Active = false,
+        }, stage)
+        local letterScale = shoxIntroMake("UIScale", {Scale = 1}, wrap)
+        local label = shoxIntroMake("TextLabel", {
+            Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+            Text = character, Font = Enum.Font.GothamBlack, TextSize = 76,
+            TextColor3 = accent, TextTransparency = 1, Active = false,
+        }, wrap)
+        letters[i] = {w = wrap, us = letterScale, lb = label, x = x, hit = -10, amp = 0, rev = math.huge}
+    end
+
+    local line = shoxIntroMake("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 52),
+        Size = UDim2.fromOffset(0, 4), BackgroundColor3 = accent, BorderSizePixel = 0,
+    }, stage)
+    local subtitle = shoxIntroMake("TextLabel", {
+        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 80),
+        Size = UDim2.fromOffset(376, 22), BackgroundTransparency = 1,
+        Text = "Code Sniper", Font = Enum.Font.GothamBold,
+        TextSize = 17, TextColor3 = subColor, TextTransparency = 1,
+    }, stage)
+    local flash = shoxIntroMake("Frame", {
+        Size = UDim2.fromScale(1, 1), BackgroundColor3 = accent,
+        BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 5, Active = false,
+    }, gui)
+    local skip = shoxIntroMake("TextButton", {
+        AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 14),
+        Size = UDim2.fromOffset(78, 32), BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+        Text = "Skip", TextColor3 = Color3.fromRGB(245, 245, 245),
+        Font = Enum.Font.GothamBold, TextSize = 14, AutoButtonColor = false,
+        BorderSizePixel = 0, ZIndex = 10, Active = true,
+    }, gui)
+    shoxIntroMake("UICorner", {CornerRadius = UDim.new(0, 9)}, skip)
+    shoxIntroMake("UIStroke", {Color = accent, Thickness = 1, Transparency = 0.55}, skip)
+    skip.Activated:Connect(function() shoxIntroFinish() end)
+
+    local timeline, beatIndex = 0, 1
+    local pulse, shake, flashAlpha, underline, subtitleAlpha = 0, 0, 0, 0, 0
+    local startedAt = os.clock()
+    local audioStarted = false
+
+    local function fireBeat(beat)
+        local strength, kind = beat[2], beat[3]
+        pulse = math.max(pulse, 0.05 + 0.06 * strength)
+        shake = math.max(shake, 6 * strength)
+        flashAlpha = math.max(flashAlpha, math.min(0.1 * strength, 0.35))
+        local first, last, amplitude = 1, #letters, 0.3 * strength
+        if kind == "a" then first, last, amplitude = 1, 4, 1.6
+        elseif kind == "b" then first, last, amplitude = 5, 7, 1.6 end
+        for i = first, last do
+            local entry = letters[i]
+            entry.hit = timeline + (i - first) * 0.035
+            entry.amp = amplitude
+            if amplitude > 1 then entry.rev = entry.hit end
+        end
+        if kind == "drop" then
+            pulse, shake, flashAlpha = 0.35, 26, 0.75
+            shoxIntroRing(stage, accent, 6)
+            task.delay(0.12, function() if ShoxIntro.Running then shoxIntroRing(stage, accent, 3) end end)
+            shoxIntroSpark(stage, letters, 24, true, accent)
+        elseif kind == "end" then
+            pulse, shake, flashAlpha = 0.3, 20, 0.6
+            shoxIntroRing(stage, accent, 5)
+            shoxIntroSpark(stage, letters, 18, true, accent)
+        else
+            shoxIntroSpark(stage, letters, math.floor(4 * strength) + 2, false, accent)
+        end
+    end
+
+    local sound = ShoxIntroSound
+    local fadeStart, fadeEnd = 4.95, 5.5
+    ShoxIntroHeartbeat = RunService.Heartbeat:Connect(function(dt)
+        if not ShoxIntro.Running then return end
+        if sound and sound.IsPlaying then
+            audioStarted = true
+            timeline = sound.TimePosition
+        elseif audioStarted then
+            timeline = timeline + dt
+        else
+            timeline = timeline + dt
+            if os.clock() - startedAt > 8 then
+                shoxIntroFinish()
+                return
+            end
+        end
+        while ShoxIntro.Beats[beatIndex] and timeline >= ShoxIntro.Beats[beatIndex][1] do
+            fireBeat(ShoxIntro.Beats[beatIndex])
+            beatIndex = beatIndex + 1
+        end
+        local fade = math.clamp((timeline - fadeStart) / (fadeEnd - fadeStart), 0, 1)
+        pulse = pulse * math.exp(-dt * 7)
+        shake = shake * math.exp(-dt * 9)
+        flashAlpha = flashAlpha * math.exp(-dt * 8)
+        local shakeNow = shake > 0.3 and shake or 0
+        stage.Position = UDim2.new(0.5, (math.random() - 0.5) * 2 * shakeNow, 0.5, (math.random() - 0.5) * 2 * shakeNow)
+        stage.Rotation = (math.random() - 0.5) * 0.3 * shakeNow
+        stageScale.Scale = base * (1 + pulse) * (1 + fade * 0.5)
+        flash.BackgroundTransparency = 1 - flashAlpha
+        bg.BackgroundTransparency = fade
+        for i, entry in ipairs(letters) do
+            local age = timeline - entry.hit
+            entry.lb.TextTransparency = (timeline >= entry.rev) and fade or 1
+            local damp = age >= 0 and math.exp(-age * 5.5) or 0
+            entry.w.Position = UDim2.new(0.5, entry.x, 0.5, -10 - (age >= 0 and math.abs(math.sin(age * 12)) * 22 * damp or 0))
+            entry.w.Rotation = age >= 0 and math.sin(age * 10) * 7 * damp * (i % 2 == 0 and 1 or -1) or 0
+            entry.us.Scale = 1 + (age >= 0 and entry.amp * math.exp(-age * 8) or 0)
+        end
+        if timeline >= 0.84 then underline = math.min(1, underline + dt * 3.5) end
+        line.Size = UDim2.fromOffset(376 * underline, 4)
+        line.BackgroundTransparency = fade
+        if timeline >= 3.15 then subtitleAlpha = math.min(1, subtitleAlpha + dt * 5) end
+        subtitle.TextTransparency = math.max(1 - subtitleAlpha, fade)
+        skip.BackgroundTransparency = fade
+        skip.TextTransparency = fade
+        if timeline >= fadeEnd then shoxIntroFinish() end
+    end)
+end
+
+local function shoxIntroLoadAudio()
+    local folder = ShoxIntro.MusicDir
+    pcall(function() if makefolder then makefolder(ShoxIntro.Dir) end end)
+    pcall(function() if makefolder then makefolder(folder) end end)
+    local path = folder .. "/intro.ogg"
+    local mp3Path = folder .. "/intro.mp3"
+    local assetFn = getcustomasset or getsynasset or getasset
+    if type(assetFn) == "function" and isfile then
+        for _, candidate in ipairs({path, mp3Path}) do
+            local okFile, exists = pcall(isfile, candidate)
+            if okFile and exists then
+                local okAsset, asset = pcall(assetFn, candidate)
+                if okAsset and type(asset) == "string" then return asset end
+            end
+        end
+    end
+    local rq = request or http_request or (syn and syn.request)
+    local body
+    if type(rq) == "function" then
+        local okReq, response = pcall(rq, {Url = ShoxIntro.IntroUrl, Method = "GET"})
+        if okReq and type(response) == "table" and response.StatusCode == 200 then body = response.Body end
+    end
+    if type(body) ~= "string" or #body < 1000 then
+        local okHttp, response = pcall(function() return game:HttpGet(ShoxIntro.IntroUrl) end)
+        if okHttp and type(response) == "string" and #response > 1000 then body = response end
+    end
+    if type(body) == "string" and #body > 1000 and writefile and type(assetFn) == "function" then
+        local extension = body:sub(1, 4) == "OggS" and "ogg" or "mp3"
+        local savePath = folder .. "/intro." .. extension
+        local okWrite = pcall(writefile, savePath, body)
+        if okWrite then
+            local okAsset, asset = pcall(assetFn, savePath)
+            if okAsset and type(asset) == "string" then return asset end
+        end
+    end
+    return nil
+end
+
+task.spawn(function()
+    local asset = nil
+    pcall(function() asset = shoxIntroLoadAudio() end)
+    if not ShoxIntro.Running then return end
+    if asset then
+        local sound = Instance.new("Sound")
+        sound.Name = "ShoxCodeSniperIntroAudio"
+        sound.SoundId = asset
+        sound.Volume = 0.6
+        sound.Looped = false
+        sound.Parent = SoundService
+        ShoxIntroSound = sound
+        pcall(function() sound:Play() end)
+    end
+    shoxIntroPlay()
+end)
+
+-- =====================================================================
+-- CONFIG PERSISTENCE
 -- =====================================================================
 local CONFIG_FILE = "Shox_cfg.txt"
 local config = {}
 
--- ─── loadConfig: read saved settings from disk into `config` ──────────
 local function loadConfig()
     config = {}
     if readfile and isfile then
@@ -30,7 +353,6 @@ local function loadConfig()
             if isfile(CONFIG_FILE) then return readfile(CONFIG_FILE) end
         end)
         if ok and type(txt) == "string" then
-            -- Parse each "key=value" line
             for line in txt:gmatch("[^\n]+") do
                 local k, v = line:match("^(%w+)=(.*)$")
                 if k then config[k] = v end
@@ -39,19 +361,17 @@ local function loadConfig()
     end
 end
 
--- ─── saveConfig: persist all `config` entries, sorted for stability ───
 local function saveConfig()
     if writefile then
         local lines = {}
         for k, v in pairs(config) do
             lines[#lines + 1] = tostring(k) .. "=" .. tostring(v)
         end
-        table.sort(lines)   -- deterministic file layout
+        table.sort(lines)
         pcall(writefile, CONFIG_FILE, table.concat(lines, "\n"))
     end
 end
 
--- ─── cfgBool: read a boolean setting ("1"=true / "0"=false) ───────────
 local function cfgBool(key, def)
     local v = config[key]
     if v == "1" then return true end
@@ -59,14 +379,12 @@ local function cfgBool(key, def)
     return def
 end
 
--- ─── cfgNum: read a numeric setting ───────────────────────────────────
 local function cfgNum(key, def)
     local v = tonumber(config[key])
     if v then return v end
     return def
 end
 
--- ─── cfgSet: write a setting (booleans serialized as "1"/"0") ─────────
 local function cfgSet(key, val)
     if type(val) == "boolean" then
         config[key] = val and "1" or "0"
@@ -75,99 +393,95 @@ local function cfgSet(key, val)
     end
 end
 
-loadConfig()   -- apply persisted settings at startup
+loadConfig()
 
--- ─── UI parent (gethui if available, else CoreGui) ────────────────────
 local parent = (gethui and gethui() or game:GetService("CoreGui"))
 local old = parent:FindFirstChild("ShoxCodeRedeemer")
-if old then old:Destroy() end   -- remove previous instance if re-executed
+if old then old:Destroy() end
 
 -- =====================================================================
 -- RUNTIME STATE
 -- =====================================================================
-local running     = false                -- redeemer active flag
-local autoOn      = cfgBool("autoOn", true)    -- auto-start on trigger
-local wordsValues = {1, 2, 3, 4}         -- selectable word-count options
-local wordsIndex  = cfgNum("wordsIndex", 3)    -- current selected index
-if wordsIndex < 1 or wordsIndex > 4 then wordsIndex = 3 end   -- clamp
-local soundsOn    = cfgBool("soundsOn", true)  -- sound toggle (flag only)
-local redeem3On   = cfgBool("redeem3On", true) -- redeem-3 fallback flag
+local running     = false
+local autoOn      = cfgBool("autoOn", true)
+local wordsValues = {1, 2, 3, 4}
+local wordsIndex  = cfgNum("wordsIndex", 3)
+if wordsIndex < 1 or wordsIndex > 4 then wordsIndex = 3 end
+local soundsOn    = cfgBool("soundsOn", true)
+local redeem3On   = cfgBool("redeem3On", true)
 
--- Capture buffers
-local _seen          = {}       -- dedupe map for submitted codes
-local _capturedParts = {}       -- words captured so far
-local _lastBox       = nil      -- last used codebox (for clearing)
-local _submitting    = false    -- guards re-entrancy during submit
+local _seen          = {}
+local _capturedParts = {}
+local _lastBox       = nil
+local _submitting    = false
 
--- Auto Buy (proximity prompt farm)
 local autoBuyEnabled       = cfgBool("autoBuyEnabled", false)
-local autoBuyPrompts       = {}       -- set of known prompts
-local autoBuyAccum         = 0        -- dt accumulator
-local autoBuyLastFired     = nil      -- last fired prompt
-local autoBuyLastFiredTime = 0        -- timestamp of last fire
+local autoBuyPrompts       = {}
+local autoBuyAccum         = 0
+local autoBuyLastFired     = nil
+local autoBuyLastFiredTime = 0
 
--- Anchor (freeze character in place)
 local anchorEnabled = cfgBool("anchorEnabled", false)
 local anchorAccum   = 0
-
--- Anti-ragdoll
 local ragdollEnabled = cfgBool("ragdollEnabled", false)
 
--- Redeem-response tracker
-local _redeemStatus       = nil       -- "redeeming" | "success" | "failed"
+local _redeemStatus       = nil
 local _redeemPendingCode  = nil
 local _redeemOriginalCode = nil
 local _redeemStartTime    = 0
 
 -- =====================================================================
+-- SCHWARZ / WEISS FARBPALETTE
+-- =====================================================================
+local C = {
+    BG_DARK       = Color3.fromRGB(15, 15, 15),
+    BG_ROW        = Color3.fromRGB(22, 22, 22),
+    BG_CARD       = Color3.fromRGB(30, 30, 30),
+    BG_INPUT      = Color3.fromRGB(38, 38, 38),
+    ACTIVE        = Color3.fromRGB(255, 255, 255),
+    INACTIVE      = Color3.fromRGB(60, 60, 60),
+    ACTIVE_TEXT   = Color3.fromRGB(0, 0, 0),
+    INACTIVE_TEXT = Color3.fromRGB(255, 255, 255),
+    TEXT          = Color3.fromRGB(255, 255, 255),
+    TEXT_MUTED    = Color3.fromRGB(160, 160, 160),
+    TEXT_ON       = Color3.fromRGB(0, 0, 0),
+    STROKE        = Color3.fromRGB(70, 70, 70),
+    STROKE_DARK   = Color3.fromRGB(45, 45, 45),
+    ON            = Color3.fromRGB(255, 255, 255),
+    OFF           = Color3.fromRGB(60, 60, 60),
+}
+
+-- =====================================================================
 -- REDEEM RESPONSE PATTERNS
 -- =====================================================================
 local SUCCESS_PATTERNS = {
-    "successfully redeemed",
-    "redeemed successfully",
-    "code redeemed",
-    "code has been redeemed",
-    "code accepted",
-    "code activated",
-    "code is valid",
-    "valid code",
-    "you redeemed",
-    "you have redeemed",
-    "success!",
-    "reward claimed",
-    "you got the",
+    "successfully redeemed", "redeemed successfully", "code redeemed",
+    "code has been redeemed", "code accepted", "code activated",
+    "code is valid", "valid code", "you redeemed", "you have redeemed",
+    "success!", "reward claimed", "you got the", "code worked",
+    "redeemed!", "successfully claimed", "reward redeemed",
+    "successfully used", "code successfully",
 }
 
 local FAIL_PATTERNS = {
-    "invalid code",
-    "code is invalid",
-    "code invalid",
-    "code is not valid",
-    "not a valid code",
-    "expired code",
-    "code expired",
-    "code has expired",
-    "code is expired",
-    "already redeemed",
-    "already used",
-    "already been used",
-    "already been redeemed",
-    "you already used",
-    "you already redeemed",
-    "unknown code",
-    "code not found",
-    "code doesn't exist",
-    "code does not exist",
-    "wrong code",
-    "incorrect code",
-    "code is incorrect",
+    "invalid code", "code is invalid", "code invalid", "code is not valid",
+    "not a valid code", "expired code", "code expired", "code has expired",
+    "code is expired", "already redeemed", "already used", "already been used",
+    "already been redeemed", "you already used", "you already redeemed",
+    "unknown code", "code not found", "code doesn't exist", "code does not exist",
+    "wrong code", "incorrect code", "code is incorrect", "failed to redeem",
+    "redeem failed", "could not redeem", "cannot redeem",
 }
 
--- ─── getWordCount: currently selected fragment count ─────────────────
+local TRIGGERS = {
+    "use code", "code is", "code:", "use:", "redeem code",
+    "code -", "new code", "code =", "codigo:", "codigo es",
+}
+
 local function getWordCount() return wordsValues[wordsIndex] end
 
 -- =====================================================================
--- ROOT GUI
+-- ROOT GUI (rounded, black & white)
 -- =====================================================================
 local v1 = Instance.new("ScreenGui")
 v1.Name = "ShoxCodeRedeemer"
@@ -175,44 +489,47 @@ v1.ResetOnSpawn = false
 v1.IgnoreGuiInset = true
 v1.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 v1.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
+v1.DisplayOrder = 100
 
--- Tab-selected event bus (fires name of newly selected tab)
 local v2 = Instance.new("BindableEvent")
 v2.Name = "TabSelected"
 v2.Parent = v1
 
--- Saved window position
 local guiPosXScale  = cfgNum("guiXScale", 0.5)
 local guiPosXOffset = cfgNum("guiXOffset", 251)
 local guiPosYScale  = cfgNum("guiYScale", 0.5)
 local guiPosYOffset = cfgNum("guiYOffset", 60)
 
--- Main window frame (draggable)
+-- Main window
 local v3 = Instance.new("Frame")
 v3.Name = "ShoxWindow"
 v3.Active = true
 v3.AnchorPoint = Vector2.new(0.5, 0.5)
-v3.BackgroundTransparency = 1
+v3.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+v3.BackgroundTransparency = 0.15
+v3.BorderSizePixel = 0
 v3.Position = UDim2.new(guiPosXScale, guiPosXOffset, guiPosYScale, guiPosYOffset)
 v3.Size = UDim2.new(0, 545, 0, 530)
 v3.Parent = v1
+Instance.new("UICorner", v3).CornerRadius = UDim.new(0, 18)
 
--- Global UI scale
 local ModeScale = Instance.new("UIScale")
 ModeScale.Name = "ModeScale"
 ModeScale.Scale = 0.44999998807907104
 ModeScale.Parent = v3
 
--- Body panel (below header)
+-- Body panel
 local v4 = Instance.new("Frame")
 v4.Name = "Body"
-v4.BackgroundColor3 = Color3.fromRGB(169, 90, 59)
-v4.BackgroundTransparency = 0.45
+v4.BackgroundColor3 = C.BG_DARK
+v4.BackgroundTransparency = 0.35
+v4.BorderSizePixel = 0
 v4.Position = UDim2.new(0, 0, 0, 72)
 v4.Size = UDim2.new(1, 0, 1, -72)
 v4.Parent = v3
+Instance.new("UICorner", v4).CornerRadius = UDim.new(0, 18)
 
--- Header panel
+-- Header
 local v5 = Instance.new("Frame")
 v5.Name = "Header"
 v5.Active = true
@@ -220,6 +537,7 @@ v5.BackgroundTransparency = 1
 v5.ClipsDescendants = true
 v5.Size = UDim2.new(1, 0, 0, 72)
 v5.Parent = v3
+Instance.new("UICorner", v5).CornerRadius = UDim.new(0, 18)
 
 -- Header background image
 local v6 = Instance.new("ImageLabel")
@@ -231,6 +549,7 @@ v6.Size = UDim2.new(1, 0, 1, 0)
 v6.Image = "rbxassetid://137573329562191"
 v6.ScaleType = Enum.ScaleType.Fit
 v6.Parent = v5
+Instance.new("UICorner", v6).CornerRadius = UDim.new(0, 18)
 
 -- Header tiled texture
 local v7 = Instance.new("ImageLabel")
@@ -241,6 +560,7 @@ v7.Size = UDim2.new(2, 0, 2, 0)
 v7.Image = "rbxassetid://102515727422321"
 v7.ScaleType = Enum.ScaleType.Tile
 v7.TileSize = UDim2.new(0.35, 0, 1, 0)
+v7.ImageColor3 = Color3.fromRGB(120, 120, 120)
 v7.Parent = v6
 
 -- Pumpkin deco 1
@@ -252,6 +572,7 @@ v8.Rotation = 25
 v8.Size = UDim2.new(0.14, 0, 1.289, 0)
 v8.ZIndex = 2
 v8.Image = "rbxassetid://76851378401687"
+v8.ImageColor3 = Color3.fromRGB(150, 150, 150)
 v8.ScaleType = Enum.ScaleType.Fit
 v8.Parent = v6
 
@@ -264,6 +585,7 @@ v9.Rotation = -5
 v9.Size = UDim2.new(0.102, 0, 0.961, 0)
 v9.ZIndex = 3
 v9.Image = "rbxassetid://76851378401687"
+v9.ImageColor3 = Color3.fromRGB(120, 120, 120)
 v9.ScaleType = Enum.ScaleType.Fit
 v9.Parent = v6
 
@@ -276,6 +598,7 @@ v10.Rotation = -3
 v10.Size = UDim2.new(0.09, 0, 1.176, 0)
 v10.ZIndex = 4
 v10.Image = "rbxassetid://95171315517545"
+v10.ImageColor3 = Color3.fromRGB(100, 100, 100)
 v10.ScaleType = Enum.ScaleType.Fit
 v10.Parent = v6
 
@@ -286,48 +609,63 @@ v11.Size = UDim2.new(1, 0, 0, 44)
 v11.ZIndex = 5
 v11.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
 v11.Text = "Shox Code Redeemer"
-v11.TextColor3 = Color3.fromRGB(255, 255, 255)
+v11.TextColor3 = C.TEXT
 v11.TextSize = 34
 v11.TextXAlignment = Enum.TextXAlignment.Left
 v11.Parent = v5
-local v12 = Instance.new("UIStroke"); v12.Thickness = 2; v12.Parent = v11
+local v12 = Instance.new("UIStroke"); v12.Thickness = 2; v12.Color = C.STROKE_DARK; v12.Parent = v11
 local v13 = Instance.new("UIPadding"); v13.PaddingLeft = UDim.new(0, 12); v13.Parent = v11
 
--- Subtitle label
+-- Subtitle
 local v14 = Instance.new("TextLabel")
 v14.BackgroundTransparency = 1
 v14.Position = UDim2.new(0, 0, 0, 42)
 v14.Size = UDim2.new(1, 0, 0, 22)
 v14.ZIndex = 5
 v14.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.ExtraBold)
-v14.Text = "Script Any Codes Using This!"
-v14.TextColor3 = Color3.fromRGB(201, 201, 201)
+v14.Text = "Black & White Edition"
+v14.TextColor3 = C.TEXT_MUTED
 v14.TextSize = 19
 v14.TextXAlignment = Enum.TextXAlignment.Left
 v14.Parent = v5
-local v15 = Instance.new("UIStroke"); v15.Thickness = 2; v15.Parent = v14
+local v15 = Instance.new("UIStroke"); v15.Thickness = 2; v15.Color = C.STROKE_DARK; v15.Parent = v14
 local v16 = Instance.new("UIPadding"); v16.PaddingLeft = UDim.new(0, 12); v16.Parent = v14
 
--- Close (X) button
+-- Close (X)
 local v17 = Instance.new("TextButton")
 v17.AnchorPoint = Vector2.new(0.5, 0.5)
-v17.BackgroundColor3 = Color3.fromRGB(47, 37, 41)
+v17.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 v17.Position = UDim2.new(0, 513, 0, 30)
 v17.Size = UDim2.new(0, 44, 0, 44)
 v17.ZIndex = 6
 v17.AutoButtonColor = false
 v17.Text = ""
 v17.Parent = v5
-local v18 = Instance.new("Frame"); v18.BackgroundColor3 = Color3.fromRGB(145, 39, 39); v18.Position = UDim2.new(0,2,0,2); v18.Size = UDim2.new(1,-4,1,-4); v18.Parent = v17
-local v19 = Instance.new("TextLabel"); v19.BackgroundTransparency = 1; v19.Size = UDim2.new(1,0,1,0); v19.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy); v19.Text = "x"; v19.TextColor3 = Color3.fromRGB(255,255,255); v19.TextSize = 26; v19.Parent = v17
-local v20 = Instance.new("UIStroke"); v20.Thickness = 2; v20.Parent = v19
+Instance.new("UICorner", v17).CornerRadius = UDim.new(0, 10)
+
+local v18 = Instance.new("Frame")
+v18.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+v18.BorderSizePixel = 0
+v18.Position = UDim2.new(0,2,0,2)
+v18.Size = UDim2.new(1,-4,1,-4)
+v18.Parent = v17
+Instance.new("UICorner", v18).CornerRadius = UDim.new(0, 8)
+
+local v19 = Instance.new("TextLabel")
+v19.BackgroundTransparency = 1
+v19.Size = UDim2.new(1,0,1,0)
+v19.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
+v19.Text = "x"
+v19.TextColor3 = C.TEXT
+v19.TextSize = 26
+v19.Parent = v17
+local v20 = Instance.new("UIStroke"); v20.Thickness = 2; v20.Color = C.STROKE_DARK; v20.Parent = v19
 
 -- =====================================================================
--- UI FACTORY HELPERS
+-- UI FACTORY HELPERS (rounded)
 -- =====================================================================
 
--- ─── makeTab: build a top tab button and return button+fill ──────────
-local function makeTab(name, posX, fillColor)
+local function makeTab(name, posX)
     local btn = Instance.new("TextButton")
     btn.AnchorPoint = Vector2.new(0.5, 0.5)
     btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
@@ -336,29 +674,33 @@ local function makeTab(name, posX, fillColor)
     btn.AutoButtonColor = false
     btn.Text = ""
     btn.Parent = v3
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 12)
+
     local fill = Instance.new("Frame")
-    fill.BackgroundColor3 = fillColor
+    fill.BackgroundColor3 = C.INACTIVE
+    fill.BorderSizePixel = 0
     fill.Position = UDim2.new(0, 1, 0, 1)
     fill.Size = UDim2.new(1, -2, 1, -2)
     fill.Parent = btn
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 11)
+
     local lbl = Instance.new("TextLabel")
     lbl.BackgroundTransparency = 1
     lbl.Size = UDim2.new(1, 0, 1, 0)
     lbl.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
     lbl.Text = name
-    lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    lbl.TextColor3 = C.INACTIVE_TEXT
     lbl.TextSize = 30
     lbl.Parent = btn
-    local s = Instance.new("UIStroke"); s.Thickness = 2; s.Parent = lbl
-    return btn, fill
+    local s = Instance.new("UIStroke"); s.Thickness = 2; s.Color = C.STROKE_DARK; s.Parent = lbl
+    return btn, fill, lbl
 end
 
--- Instantiate the three tabs
-local RedeemerTab,  RedeemerFill  = makeTab("Redeemer",   93, Color3.fromRGB(196, 92, 0))
-local TraitFarmTab, TraitFarmFill = makeTab("Trait Farm", 267, Color3.fromRGB(255, 145, 25))
-local SettingsTab,  SettingsFill  = makeTab("Settings",   441, Color3.fromRGB(255, 145, 25))
+local RedeemerTab,  RedeemerFill,  RedeemerLbl  = makeTab("Redeemer",   93)
+local TraitFarmTab, TraitFarmFill, TraitFarmLbl = makeTab("Trait Farm", 267)
+local SettingsTab,  SettingsFill,  SettingsLbl  = makeTab("Settings",   441)
 
--- ─── Pages (content containers) ──────────────────────────────────────
+-- Pages
 local RedeemerPage = Instance.new("Frame")
 RedeemerPage.BackgroundTransparency = 1
 RedeemerPage.Position = UDim2.new(0, 0, 0, 150)
@@ -379,29 +721,29 @@ TraitFarmPage.Size = UDim2.new(1, 0, 1, -150)
 TraitFarmPage.Visible = false
 TraitFarmPage.Parent = v3
 
--- ─── makeRow: labeled row card ───────────────────────────────────────
 local function makeRow(parent, y, title, textSize)
     local row = Instance.new("Frame")
-    row.BackgroundColor3 = Color3.fromRGB(33, 43, 50)
+    row.BackgroundColor3 = C.BG_ROW
+    row.BorderSizePixel = 0
     row.Position = UDim2.new(0, 10, 0, y)
     row.Size = UDim2.new(1, -20, 0, 68)
     row.Parent = parent
-    local st = Instance.new("UIStroke"); st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; st.Parent = row
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
+    local st = Instance.new("UIStroke"); st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; st.Color = C.STROKE_DARK; st.Thickness = 1.5; st.Transparency = 0.3; st.Parent = row
     local lbl = Instance.new("TextLabel")
     lbl.BackgroundTransparency = 1
     lbl.Size = UDim2.new(1, 0, 1, 0)
     lbl.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
     lbl.Text = title
-    lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    lbl.TextColor3 = C.TEXT
     lbl.TextSize = textSize or 30
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.Parent = row
-    local ls = Instance.new("UIStroke"); ls.Thickness = 2; ls.Parent = lbl
+    local ls = Instance.new("UIStroke"); ls.Thickness = 2; ls.Color = C.STROKE_DARK; ls.Parent = lbl
     local pad = Instance.new("UIPadding"); pad.PaddingLeft = UDim.new(0, 16); pad.Parent = lbl
     return row, lbl
 end
 
--- ─── makeToggleButton: on/off toggle button factory ──────────────────
 local function makeToggleButton(parent, x, labelText, fillColor)
     local btn = Instance.new("TextButton")
     btn.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -411,29 +753,33 @@ local function makeToggleButton(parent, x, labelText, fillColor)
     btn.AutoButtonColor = false
     btn.Text = ""
     btn.Parent = parent
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+
     local fill = Instance.new("Frame")
     fill.BackgroundColor3 = fillColor
+    fill.BorderSizePixel = 0
     fill.Position = UDim2.new(0, 1, 0, 1)
     fill.Size = UDim2.new(1, -2, 1, -2)
     fill.Parent = btn
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 9)
+
     local lbl = Instance.new("TextLabel")
     lbl.BackgroundTransparency = 1
     lbl.Size = UDim2.new(1, 0, 1, 0)
     lbl.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
     lbl.Text = labelText
-    lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    lbl.TextColor3 = C.TEXT
     lbl.TextSize = 26
     lbl.Parent = btn
-    local s = Instance.new("UIStroke"); s.Thickness = 2; s.Parent = lbl
+    local s = Instance.new("UIStroke"); s.Thickness = 2; s.Color = C.STROKE_DARK; s.Parent = lbl
     return btn, fill, lbl
 end
 
 -- =====================================================================
--- REDEEMER PAGE — word-count buttons + status + start/stop
+-- REDEEMER PAGE
 -- =====================================================================
 local RedRow1 = makeRow(RedeemerPage, 0, "Words")
-local WordsButtons, WordsFills = {}, {}
--- Create the four word-count buttons (1..4)
+local WordsButtons, WordsFills, WordsLbls = {}, {}, {}
 for i = 1, 4 do
     local x = 277 + (i - 1) * 68
     local btn = Instance.new("TextButton")
@@ -444,29 +790,35 @@ for i = 1, 4 do
     btn.AutoButtonColor = false
     btn.Text = ""
     btn.Parent = RedRow1
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+
     local fill = Instance.new("Frame")
-    fill.BackgroundColor3 = Color3.fromRGB(255, 145, 25)
+    fill.BackgroundColor3 = C.INACTIVE
+    fill.BorderSizePixel = 0
     fill.Position = UDim2.new(0, 1, 0, 1)
     fill.Size = UDim2.new(1, -2, 1, -2)
     fill.Parent = btn
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 9)
+
     local lbl = Instance.new("TextLabel")
     lbl.BackgroundTransparency = 1
     lbl.Size = UDim2.new(1, 0, 1, 0)
     lbl.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
     lbl.Text = tostring(i)
-    lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    lbl.TextColor3 = C.INACTIVE_TEXT
     lbl.TextSize = 28
     lbl.Parent = btn
-    local s = Instance.new("UIStroke"); s.Thickness = 2; s.Parent = lbl
+    local s = Instance.new("UIStroke"); s.Thickness = 2; s.Color = C.STROKE_DARK; s.Parent = lbl
     WordsButtons[i] = btn
     WordsFills[i] = fill
+    WordsLbls[i] = lbl
 end
 
--- Status row ("Redeemer: Enabled/Disabled")
+-- Status row
 local RedRow2, RedeemerStatusLabel = makeRow(RedeemerPage, 76, "Redeemer: Disabled")
-RedeemerStatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+RedeemerStatusLabel.TextColor3 = C.TEXT_MUTED
 
--- Start / Stop button
+-- Start/Stop button
 local StartStopBtn = Instance.new("TextButton")
 StartStopBtn.AnchorPoint = Vector2.new(0.5, 0.5)
 StartStopBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
@@ -475,67 +827,75 @@ StartStopBtn.Size = UDim2.new(0, 160, 0, 46)
 StartStopBtn.AutoButtonColor = false
 StartStopBtn.Text = ""
 StartStopBtn.Parent = RedRow2
+Instance.new("UICorner", StartStopBtn).CornerRadius = UDim.new(0, 10)
+
 local StartStopFill = Instance.new("Frame")
-StartStopFill.BackgroundColor3 = Color3.fromRGB(145, 39, 39)
+StartStopFill.BackgroundColor3 = C.OFF
+StartStopFill.BorderSizePixel = 0
 StartStopFill.Position = UDim2.new(0, 1, 0, 1)
 StartStopFill.Size = UDim2.new(1, -2, 1, -2)
 StartStopFill.Parent = StartStopBtn
+Instance.new("UICorner", StartStopFill).CornerRadius = UDim.new(0, 9)
+
 local StartStopLabel = Instance.new("TextLabel")
 StartStopLabel.BackgroundTransparency = 1
 StartStopLabel.Size = UDim2.new(1, 0, 1, 0)
 StartStopLabel.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
 StartStopLabel.Text = "OFF [F]"
-StartStopLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+StartStopLabel.TextColor3 = C.TEXT
 StartStopLabel.TextSize = 20
 StartStopLabel.Parent = StartStopBtn
-local ss = Instance.new("UIStroke"); ss.Thickness = 2; ss.Parent = StartStopLabel
+local ss = Instance.new("UIStroke"); ss.Thickness = 2; ss.Color = C.STROKE_DARK; ss.Parent = StartStopLabel
 
--- Progress row (shows N/M word capture)
+-- Progress
 local ProgressRow, ProgressLabel = makeRow(RedeemerPage, 152, "0/" .. tostring(getWordCount()))
 
--- Auto Detect toggle row
+-- Auto Detect
 local RedRow4 = makeRow(RedeemerPage, 228, "Auto Detect")
-local AutoDetectBtn, AutoDetectFill, AutoDetectLabel = makeToggleButton(RedRow4, 461, "ON", Color3.fromRGB(196, 92, 0))
+local AutoDetectBtn, AutoDetectFill, AutoDetectLabel = makeToggleButton(RedRow4, 461, "ON", C.INACTIVE)
 
--- Code display strip (shows current/result code text)
+-- Code display
 local CodeDisplay = Instance.new("Frame")
-CodeDisplay.BackgroundColor3 = Color3.fromRGB(196, 92, 0)
+CodeDisplay.BackgroundColor3 = C.BG_CARD
+CodeDisplay.BorderSizePixel = 0
 CodeDisplay.Position = UDim2.new(0, 10, 0, 304)
 CodeDisplay.Size = UDim2.new(1, -20, 0, 50)
 CodeDisplay.Parent = RedeemerPage
-local cds = Instance.new("UIStroke"); cds.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; cds.Thickness = 2; cds.Parent = CodeDisplay
+Instance.new("UICorner", CodeDisplay).CornerRadius = UDim.new(0, 12)
+local cds = Instance.new("UIStroke"); cds.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; cds.Color = C.STROKE; cds.Thickness = 2; cds.Parent = CodeDisplay
+
 local CodeDisplayLabel = Instance.new("TextLabel")
 CodeDisplayLabel.BackgroundTransparency = 1
 CodeDisplayLabel.Size = UDim2.new(1, 0, 1, 0)
 CodeDisplayLabel.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
 CodeDisplayLabel.Text = "Code Will Show Here"
-CodeDisplayLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+CodeDisplayLabel.TextColor3 = C.TEXT
 CodeDisplayLabel.TextSize = 30
 CodeDisplayLabel.Parent = CodeDisplay
-local cds2 = Instance.new("UIStroke"); cds2.Thickness = 2; cds2.Parent = CodeDisplayLabel
+local cds2 = Instance.new("UIStroke"); cds2.Thickness = 2; cds2.Color = C.STROKE_DARK; cds2.Parent = CodeDisplayLabel
 
 -- =====================================================================
 -- SETTINGS PAGE
 -- =====================================================================
 local SetRow1 = makeRow(SettingsPage, 0, "Sounds")
-local SoundsBtn, SoundsFill, SoundsLabel = makeToggleButton(SetRow1, 461, "ON", Color3.fromRGB(196, 92, 0))
+local SoundsBtn, SoundsFill, SoundsLabel = makeToggleButton(SetRow1, 461, "ON", C.INACTIVE)
 local SetRow2 = makeRow(SettingsPage, 76, "Redeem 3 if 4 wrong", 26)
-local Redeem3Btn, Redeem3Fill, Redeem3Label = makeToggleButton(SetRow2, 461, "ON", Color3.fromRGB(196, 92, 0))
+local Redeem3Btn, Redeem3Fill, Redeem3Label = makeToggleButton(SetRow2, 461, "ON", C.INACTIVE)
 
 -- =====================================================================
 -- TRAIT FARM PAGE
 -- =====================================================================
 local TF1 = makeRow(TraitFarmPage, 0, "Auto Buy")
-local TF1Btn, TF1Fill, TF1Lbl = makeToggleButton(TF1, 461, "OFF", Color3.fromRGB(255, 145, 25))
+local TF1Btn, TF1Fill, TF1Lbl = makeToggleButton(TF1, 461, "OFF", C.INACTIVE)
 local TF2 = makeRow(TraitFarmPage, 76, "Anchor")
-local TF2Btn, TF2Fill, TF2Lbl = makeToggleButton(TF2, 461, "OFF", Color3.fromRGB(255, 145, 25))
+local TF2Btn, TF2Fill, TF2Lbl = makeToggleButton(TF2, 461, "OFF", C.INACTIVE)
 local TF3 = makeRow(TraitFarmPage, 152, "Anti Ragdoll")
-local TF3Btn, TF3Fill, TF3Lbl = makeToggleButton(TF3, 461, "OFF", Color3.fromRGB(255, 145, 25))
+local TF3Btn, TF3Fill, TF3Lbl = makeToggleButton(TF3, 461, "OFF", C.INACTIVE)
 local TF4 = makeRow(TraitFarmPage, 228, "Anti Lag")
-local TF4Btn, TF4Fill, TF4Lbl = makeToggleButton(TF4, 461, "OFF", Color3.fromRGB(255, 145, 25))
+local TF4Btn, TF4Fill, TF4Lbl = makeToggleButton(TF4, 461, "OFF", C.INACTIVE)
 
 -- =====================================================================
--- HUD HOLDER — small floating toggle icon (mini launcher)
+-- HUD HOLDER (mini launcher)
 -- =====================================================================
 local HudHolder = Instance.new("Frame")
 HudHolder.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -554,23 +914,28 @@ ToggleButton.Size = UDim2.new(0, 89, 0, 89)
 ToggleButton.AutoButtonColor = false
 ToggleButton.Text = ""
 ToggleButton.Parent = HudHolder
+Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(1, 0)
 
 local Edge = Instance.new("Frame")
 Edge.BackgroundTransparency = 1
 Edge.Position = UDim2.new(0, 2, 0, 2)
 Edge.Size = UDim2.new(1, -4, 1, -4)
 Edge.Parent = ToggleButton
+Instance.new("UICorner", Edge).CornerRadius = UDim.new(1, 0)
 local EdgeStroke = Instance.new("UIStroke")
 EdgeStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+EdgeStroke.Color = C.STROKE
 EdgeStroke.Thickness = 2
 EdgeStroke.Parent = Edge
 
 local Face = Instance.new("Frame")
-Face.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
+Face.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Face.BorderSizePixel = 0
 Face.ClipsDescendants = true
 Face.Position = UDim2.new(0, 4, 0, 4)
 Face.Size = UDim2.new(1, -8, 1, -8)
 Face.Parent = ToggleButton
+Instance.new("UICorner", Face).CornerRadius = UDim.new(1, 0)
 
 local HImg = Instance.new("ImageLabel")
 HImg.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -578,6 +943,7 @@ HImg.BackgroundTransparency = 1
 HImg.Position = UDim2.new(0.5, 0, 0.5, 0)
 HImg.Size = UDim2.new(1, 0, 1, 0)
 HImg.Image = "rbxassetid://137573329562191"
+HImg.ImageColor3 = Color3.fromRGB(200, 200, 200)
 HImg.ScaleType = Enum.ScaleType.Crop
 HImg.Parent = Face
 
@@ -587,29 +953,10 @@ Bat.BackgroundTransparency = 1
 Bat.Position = UDim2.new(0.5, 0, 0.5, 0)
 Bat.Size = UDim2.new(2, 0, 2, 0)
 Bat.Image = "rbxassetid://102515727422321"
+Bat.ImageColor3 = Color3.fromRGB(80, 80, 80)
 Bat.ScaleType = Enum.ScaleType.Tile
 Bat.TileSize = UDim2.new(0.5, 0, 0.5, 0)
 Bat.Parent = Face
-
-local Pumpkin = Instance.new("ImageLabel")
-Pumpkin.AnchorPoint = Vector2.new(0.5, 0.5)
-Pumpkin.BackgroundTransparency = 1
-Pumpkin.Position = UDim2.new(0.5, 0, 0, 40)
-Pumpkin.Size = UDim2.new(0, 52, 0, 52)
-Pumpkin.Image = "rbxassetid://76851378401687"
-Pumpkin.ScaleType = Enum.ScaleType.Fit
-Pumpkin.Parent = ToggleButton
-
-local Candy = Instance.new("TextLabel")
-Candy.AnchorPoint = Vector2.new(0.5, 0.5)
-Candy.BackgroundTransparency = 1
-Candy.Position = UDim2.new(0, 12, 0, 8)
-Candy.Rotation = 70
-Candy.Size = UDim2.new(0, 34, 0, 34)
-Candy.ZIndex = 5
-Candy.Text = "🍬"
-Candy.TextSize = 30
-Candy.Parent = ToggleButton
 
 local HLbl = Instance.new("TextLabel")
 HLbl.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -618,27 +965,24 @@ HLbl.Position = UDim2.new(0.5, 0, 0, 83)
 HLbl.Size = UDim2.new(1, 20, 0, 26)
 HLbl.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.ExtraBold)
 HLbl.Text = "Shox"
-HLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+HLbl.TextColor3 = C.TEXT
 HLbl.TextSize = 22
 HLbl.Parent = ToggleButton
-local HLblS = Instance.new("UIStroke"); HLblS.Thickness = 2; HLblS.Parent = HLbl
+local HLblS = Instance.new("UIStroke"); HLblS.Thickness = 2; HLblS.Color = C.STROKE_DARK; HLblS.Parent = HLbl
 
 -- =====================================================================
 -- WINDOW SHOW/HIDE + DRAG
 -- =====================================================================
 local guiVisible = true
--- Click the HUD icon to toggle main window
 ToggleButton.MouseButton1Click:Connect(function()
     guiVisible = not guiVisible
     v3.Visible = guiVisible
 end)
--- Close button on header hides the window
 v17.MouseButton1Click:Connect(function()
     guiVisible = false
     v3.Visible = false
 end)
 
--- ─── Drag on header ──────────────────────────────────────────────────
 local dragging, dragStart, startPos
 v5.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -650,7 +994,6 @@ v5.InputBegan:Connect(function(input)
             if input.UserInputState == Enum.UserInputState.End then
                 dragging = false
                 if c then c:Disconnect() end
-                -- Save final position
                 cfgSet("guiXScale", v3.Position.X.Scale)
                 cfgSet("guiXOffset", v3.Position.X.Offset)
                 cfgSet("guiYScale", v3.Position.Y.Scale)
@@ -660,7 +1003,6 @@ v5.InputBegan:Connect(function(input)
         end)
     end
 end)
--- Apply drag delta while mouse/touch moves
 UserInputService.InputChanged:Connect(function(input)
     if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local d = input.Position - dragStart
@@ -671,45 +1013,50 @@ end)
 -- =====================================================================
 -- TAB SWITCHING
 -- =====================================================================
-local ACTIVE = Color3.fromRGB(196, 92, 0)
-local INACTIVE = Color3.fromRGB(255, 145, 25)
 local function selectTab(which)
-    -- Hide all pages, set all tabs inactive
     RedeemerPage.Visible  = false
     SettingsPage.Visible  = false
     TraitFarmPage.Visible = false
-    RedeemerFill.BackgroundColor3  = INACTIVE
-    TraitFarmFill.BackgroundColor3 = INACTIVE
-    SettingsFill.BackgroundColor3  = INACTIVE
-    -- Show the selected page
+    RedeemerFill.BackgroundColor3  = C.INACTIVE
+    TraitFarmFill.BackgroundColor3 = C.INACTIVE
+    SettingsFill.BackgroundColor3  = C.INACTIVE
+    RedeemerLbl.TextColor3  = C.INACTIVE_TEXT
+    TraitFarmLbl.TextColor3 = C.INACTIVE_TEXT
+    SettingsLbl.TextColor3  = C.INACTIVE_TEXT
+
     if which == "Redeemer" then
         RedeemerPage.Visible = true
-        RedeemerFill.BackgroundColor3 = ACTIVE
+        RedeemerFill.BackgroundColor3 = C.ACTIVE
+        RedeemerLbl.TextColor3 = C.ACTIVE_TEXT
     elseif which == "TraitFarm" then
         TraitFarmPage.Visible = true
-        TraitFarmFill.BackgroundColor3 = ACTIVE
+        TraitFarmFill.BackgroundColor3 = C.ACTIVE
+        TraitFarmLbl.TextColor3 = C.ACTIVE_TEXT
     elseif which == "Settings" then
         SettingsPage.Visible = true
-        SettingsFill.BackgroundColor3 = ACTIVE
+        SettingsFill.BackgroundColor3 = C.ACTIVE
+        SettingsLbl.TextColor3 = C.ACTIVE_TEXT
     end
-    v2:Fire(which)   -- notify listeners
+    v2:Fire(which)
 end
 RedeemerTab.MouseButton1Click:Connect(function() selectTab("Redeemer") end)
 TraitFarmTab.MouseButton1Click:Connect(function() selectTab("TraitFarm") end)
 SettingsTab.MouseButton1Click:Connect(function() selectTab("Settings") end)
-selectTab("Redeemer")   -- default tab
+selectTab("Redeemer")
 
 -- =====================================================================
 -- TOGGLE WRAPPER
 -- =====================================================================
-local ON_COLOR  = Color3.fromRGB(39, 145, 39)
-local OFF_COLOR = Color3.fromRGB(145, 39, 39)
-
--- ─── makeToggle: attach on/off behavior to a button ──────────────────
 local function makeToggle(button, fill, label, initial, onChange)
     local state = initial
     local function render()
-        fill.BackgroundColor3 = state and ON_COLOR or OFF_COLOR
+        if state then
+            fill.BackgroundColor3 = C.ON
+            label.TextColor3 = C.TEXT_ON
+        else
+            fill.BackgroundColor3 = C.OFF
+            label.TextColor3 = C.TEXT
+        end
         label.Text = state and "ON" or "OFF"
     end
     render()
@@ -722,20 +1069,21 @@ local function makeToggle(button, fill, label, initial, onChange)
 end
 
 -- =====================================================================
--- WORD-COUNT BUTTON SELECTION
+-- WORD COUNT SELECTION
 -- =====================================================================
-local SELECTED_COLOR   = Color3.fromRGB(196, 92, 0)
-local UNSELECTED_COLOR = Color3.fromRGB(255, 145, 25)
-
--- ─── renderWords: sync button colors + progress label ────────────────
 local function renderWords()
     for i = 1, 4 do
-        WordsFills[i].BackgroundColor3 = (i == wordsIndex) and SELECTED_COLOR or UNSELECTED_COLOR
+        if i == wordsIndex then
+            WordsFills[i].BackgroundColor3 = C.ACTIVE
+            WordsLbls[i].TextColor3 = C.ACTIVE_TEXT
+        else
+            WordsFills[i].BackgroundColor3 = C.INACTIVE
+            WordsLbls[i].TextColor3 = C.INACTIVE_TEXT
+        end
     end
     ProgressLabel.Text = tostring(#_capturedParts) .. "/" .. tostring(getWordCount())
 end
 renderWords()
--- Wire each word-count button
 for i = 1, 4 do
     WordsButtons[i].MouseButton1Click:Connect(function()
         wordsIndex = i
@@ -748,7 +1096,6 @@ end
 -- =====================================================================
 -- UI SCANNING HELPERS
 -- =====================================================================
--- ─── isOurGui: is this instance inside our own ScreenGui? ────────────
 local function isOurGui(instance)
     local p = instance
     for _ = 1, 10 do
@@ -759,7 +1106,6 @@ local function isOurGui(instance)
     return false
 end
 
--- ─── isVisibleChain: every ancestor is visible+enabled ───────────────
 local function isVisibleChain(inst)
     local current = inst
     while current do
@@ -770,7 +1116,6 @@ local function isVisibleChain(inst)
     return true
 end
 
--- ─── findAllTextBoxes: all visible TextBoxes in PlayerGui ────────────
 local function findAllTextBoxes(pg)
     local boxes = {}
     for _, g in ipairs(pg:GetChildren()) do
@@ -785,7 +1130,6 @@ local function findAllTextBoxes(pg)
     return boxes
 end
 
--- ─── findCodeButtons: buttons whose name/parent hints "code"/"redeem"
 local function findCodeButtons(pg)
     local btns = {}
     for _, g in ipairs(pg:GetChildren()) do
@@ -805,7 +1149,6 @@ local function findCodeButtons(pg)
     return btns
 end
 
--- ─── clickButton: fire every click method available ──────────────────
 local function clickButton(btn)
     if not btn then return false end
     pcall(function() btn.MouseButton1Click:Fire() end)
@@ -827,7 +1170,6 @@ local function clickButton(btn)
     return true
 end
 
--- ─── fireBoxFocusLost: signal the box lost focus ─────────────────────
 local function fireBoxFocusLost(box)
     if not box then return end
     if typeof(firesignal) == "function" then
@@ -836,20 +1178,18 @@ local function fireBoxFocusLost(box)
 end
 
 -- =====================================================================
--- CORE: typeAndSubmitCode
--- Tries the Codes UI first, then scans dynamically.
+-- CORE: typeAndSubmitCode (schneller)
 -- =====================================================================
 local function typeAndSubmitCode(code)
     local pg = playerGui or player:FindFirstChildOfClass("PlayerGui")
     if not pg then return false, "no PlayerGui", nil end
 
-    -- ── Fast path: known "Codes" subtree ─────────────────────────────
+    -- Fast path: known Codes GUI
     local codesGui = pg:FindFirstChild("Codes")
     if codesGui then
         if codesGui:IsA("ScreenGui") then codesGui.Enabled = true end
         local codesFrame = codesGui:FindFirstChild("Codes") or codesGui
         if codesFrame then
-            -- Force all parents visible
             if codesFrame:IsA("GuiObject") then codesFrame.Visible = true end
             local cur = codesFrame
             while cur and cur ~= codesGui do
@@ -857,13 +1197,11 @@ local function typeAndSubmitCode(code)
                 cur = cur.Parent
             end
 
-            -- Find first TextBox
             local box = nil
             for _, d in ipairs(codesFrame:GetDescendants()) do
                 if d:IsA("TextBox") and not isOurGui(d) then box = d; break end
             end
 
-            -- Find submit button
             local submitBtn = nil
             for _, d in ipairs(codesFrame:GetDescendants()) do
                 if (d:IsA("TextButton") or d:IsA("ImageButton")) and not isOurGui(d) then
@@ -880,7 +1218,7 @@ local function typeAndSubmitCode(code)
 
             if box then
                 pcall(function() box.Text = code end)
-                task.wait(0.1)
+                task.wait(0.05)   -- ⚡ schneller (war 0.1)
                 if submitBtn then clickButton(submitBtn)
                 else fireBoxFocusLost(box) end
                 _lastBox = box
@@ -889,18 +1227,17 @@ local function typeAndSubmitCode(code)
         end
     end
 
-    -- ── Fallback: open the Codes UI, then find a codebox ─────────────
+    -- Fallback: open codes UI
     for _, btn in ipairs(findCodeButtons(pg)) do
-        clickButton(btn); task.wait(0.05)
+        clickButton(btn); task.wait(0.03)   -- ⚡ schneller (war 0.05)
     end
-    task.wait(0.2)
+    task.wait(0.1)   -- ⚡ schneller (war 0.2)
 
-    -- Poll for a codebox for up to 2 seconds
+    -- Poll for codebox
     local box = nil
-    local deadline = tick() + 2
+    local deadline = tick() + 1   -- ⚡ schneller (war 2s)
     while tick() < deadline do
         local allBoxes = findAllTextBoxes(pg)
-        -- Pass 1: name hints at code
         for _, d in ipairs(allBoxes) do
             if isVisibleChain(d) then
                 local n = d.Name:lower()
@@ -912,21 +1249,19 @@ local function typeAndSubmitCode(code)
                 end
             end
         end
-        -- Pass 2: any visible box
         if not box then
             for _, d in ipairs(allBoxes) do
                 if isVisibleChain(d) then box = d; break end
             end
         end
         if box then break end
-        task.wait(0.1)
+        task.wait(0.05)
     end
     if not box then return false, "no codebox", nil end
 
     pcall(function() box.Text = code end)
-    task.wait(0.1)
+    task.wait(0.05)   -- ⚡ schneller (war 0.1)
 
-    -- Find nearest submit button by walking up parents
     local redeemBtn = nil
     local names = {"submit","redeem","claim","confirm","enter","send","apply","ok","use","go","check"}
     local p = box.Parent
@@ -955,7 +1290,6 @@ local function typeAndSubmitCode(code)
     return true, "dynamic", box
 end
 
--- ─── clearBoxText: clear the last-used box (or find one) ─────────────
 local function clearBoxText(box)
     if not box or not box.Parent then
         local all = findAllTextBoxes(playerGui)
@@ -966,17 +1300,18 @@ local function clearBoxText(box)
     if box then pcall(function() box.Text = "" end) end
 end
 
-local _setRunning_ref   -- forward declaration; assigned later
+local _setRunning_ref
+
 -- =====================================================================
--- SUBMIT PIPELINE — capture buffer → submit → watch for response
+-- SUBMIT PIPELINE (schneller)
 -- =====================================================================
 local function submitCapturedCode(code)
     if not code or code == "" then return end
-    if _seen[code] then return end      -- dedupe
-    if _submitting then return end      -- already submitting
+    if _seen[code] then return end
+    if _submitting then return end
 
     _seen[code] = true
-    task.delay(3, function() _seen[code] = nil end)   -- expire dedupe after 3s
+    task.delay(2, function() _seen[code] = nil end)   -- ⚡ kürzer (war 3s)
 
     _submitting = true
     _redeemStatus       = "redeeming"
@@ -985,19 +1320,17 @@ local function submitCapturedCode(code)
     _redeemStartTime    = os.clock()
     CodeDisplayLabel.Text = "Redeeming..."
 
-    -- Type + submit
     local ok, _, usedBox = typeAndSubmitCode(code)
     _submitting = false
     if usedBox then _lastBox = usedBox end
 
-    -- Stop the capture loop (one submit per capture session)
     running = false
     if _setRunning_ref then _setRunning_ref(false) end
 
-    -- Auto-clear the "Redeeming..." text after 5s if no response
+    -- Auto-clear nach 3s (war 5s)
     task.spawn(function()
         local startTime = _redeemStartTime
-        task.wait(5)
+        task.wait(3)
         if _redeemStatus == "redeeming" and _redeemStartTime == startTime then
             CodeDisplayLabel.Text = "Code Will Show Here"
             _redeemStatus       = nil
@@ -1006,17 +1339,15 @@ local function submitCapturedCode(code)
         end
     end)
 
-    task.wait(0.4)
+    task.wait(0.2)   -- ⚡ schneller (war 0.4)
     if _lastBox then clearBoxText(_lastBox) end
 end
 
--- ─── captureWord: append a word to the buffer, submit when full ──────
 local function captureWord(word)
     if not word or word == "" then return end
     _capturedParts[#_capturedParts + 1] = word
     ProgressLabel.Text = tostring(#_capturedParts) .. "/" .. tostring(getWordCount())
     CodeDisplayLabel.Text = table.concat(_capturedParts)
-    -- Buffer full → submit
     if #_capturedParts >= getWordCount() then
         local code = table.concat(_capturedParts)
         _capturedParts = {}
@@ -1025,23 +1356,20 @@ local function captureWord(word)
 end
 
 -- =====================================================================
--- TRIGGER DETECTION — "use code X" / "code is X" → start capture
+-- TRIGGER DETECTION
 -- =====================================================================
-local TRIGGERS = {"use code", "code is"}
 local function detectTrigger(text)
     local lower = text:lower()
     for _, trig in ipairs(TRIGGERS) do
         local s, e = lower:find(trig, 1, true)
-        if s then return true, text:sub(e + 1) end   -- return remainder
+        if s then return true, text:sub(e + 1) end
     end
     return false, text
 end
 
--- ─── checkRedeemResponse: match text against success/fail patterns ───
 local function checkRedeemResponse(text)
     if _redeemStatus ~= "redeeming" then return false end
     local lower = text:lower()
-    -- Success?
     for _, p in ipairs(SUCCESS_PATTERNS) do
         if lower:find(p, 1, true) then
             _redeemStatus = "success"
@@ -1051,7 +1379,6 @@ local function checkRedeemResponse(text)
             return true
         end
     end
-    -- Failure?
     for _, p in ipairs(FAIL_PATTERNS) do
         if lower:find(p, 1, true) then
             _redeemStatus = "failed"
@@ -1064,16 +1391,12 @@ local function checkRedeemResponse(text)
     return false
 end
 
--- ─── processText: main handler for incoming notification text ────────
 local function processText(text)
     if not text or text == "" then return end
-
-    -- Redeem response takes priority
     if checkRedeemResponse(text) then return end
 
     local triggered, remainder = detectTrigger(text)
     if triggered then
-        -- Fresh session: clear prior state
         _redeemStatus       = nil
         _redeemPendingCode  = nil
         _redeemOriginalCode = nil
@@ -1082,16 +1405,13 @@ local function processText(text)
         if _lastBox then clearBoxText(_lastBox) end
         _capturedParts = {}
         CodeDisplayLabel.Text = ""
-        -- Capture words from the remainder
         for word in remainder:gmatch("[%w_]+") do captureWord(word) end
     else
-        -- Only capture if already running
         if not running then return end
         for word in text:gmatch("[%w_]+") do captureWord(word) end
     end
 end
 
--- ─── stripRich: remove <RichText> tags ───────────────────────────────
 local function stripRich(t)
     if type(t) ~= "string" then return tostring(t) end
     return (t:gsub("<[^>]->", ""))
@@ -1099,8 +1419,6 @@ end
 
 -- =====================================================================
 -- NOTIFICATION REMOTE DISCOVERY
--- Scan Packages.Net for the RemoteEvent whose handler lives in
--- NotificationController.
 -- =====================================================================
 local function resolveNotifyRemote()
     if _G.PhiNotifyRemote then return _G.PhiNotifyRemote end
@@ -1131,33 +1449,32 @@ local function resolveNotifyRemote()
 end
 
 -- =====================================================================
--- setRunning: master on/off for the capture loop
+-- setRunning
 -- =====================================================================
 local function setRunning(value)
     running = value
     if running then
-        -- ON state visuals
-        StartStopFill.BackgroundColor3 = ON_COLOR
+        StartStopFill.BackgroundColor3 = C.ON
+        StartStopLabel.TextColor3 = C.TEXT_ON
         StartStopLabel.Text = "ON [F]"
         RedeemerStatusLabel.Text = "Redeemer: Enabled"
-        RedeemerStatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+        RedeemerStatusLabel.TextColor3 = C.TEXT
         ProgressLabel.Text = tostring(#_capturedParts) .. "/" .. tostring(getWordCount())
     else
-        -- OFF state visuals
-        StartStopFill.BackgroundColor3 = OFF_COLOR
+        StartStopFill.BackgroundColor3 = C.OFF
+        StartStopLabel.TextColor3 = C.TEXT
         StartStopLabel.Text = "OFF [F]"
         RedeemerStatusLabel.Text = "Redeemer: Disabled"
-        RedeemerStatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        RedeemerStatusLabel.TextColor3 = C.TEXT_MUTED
         _capturedParts = {}
         ProgressLabel.Text = "0/" .. tostring(getWordCount())
     end
 end
-_setRunning_ref = setRunning   -- expose for forward refs
+_setRunning_ref = setRunning
 
 -- =====================================================================
--- AUTO BUY — periodically fire nearby "buy"-type ProximityPrompts
+-- AUTO BUY
 -- =====================================================================
--- ─── isBuyPrompt: does the prompt look like a purchase? ──────────────
 local function isBuyPrompt(prompt)
     if not prompt then return false end
     local text = (tostring(prompt.Name) .. " " .. tostring(prompt.ActionText) .. " " .. tostring(prompt.ObjectText)):lower()
@@ -1167,7 +1484,6 @@ local function isBuyPrompt(prompt)
     return false
 end
 
--- ─── getPromptPos: world position of a prompt's owner ────────────────
 local function getPromptPos(prompt)
     if not prompt then return nil end
     local p = prompt.Parent
@@ -1182,13 +1498,11 @@ local function getPromptPos(prompt)
     return nil
 end
 
--- ─── fireBuyPrompt: trigger a prompt via fireproximityprompt or hold ─
 local function fireBuyPrompt(prompt)
     if not (prompt and prompt.Parent and prompt.Enabled) then return false end
     if type(fireproximityprompt) == "function" then
         return pcall(fireproximityprompt, prompt)
     end
-    -- Fallback: simulate hold
     return pcall(function()
         prompt:InputHoldBegin()
         task.wait(math.max(prompt.HoldDuration or 0, 0.05) + 0.05)
@@ -1196,7 +1510,6 @@ local function fireBuyPrompt(prompt)
     end)
 end
 
--- Track existing + new prompts in Workspace
 Workspace.DescendantAdded:Connect(function(d)
     if d:IsA("ProximityPrompt") then autoBuyPrompts[d] = true end
 end)
@@ -1211,7 +1524,6 @@ task.defer(function()
     end)
 end)
 
--- Auto-buy main loop — every 0.2s, find nearest buy prompt and fire
 RunService.Heartbeat:Connect(function(dt)
     if not autoBuyEnabled then return end
     autoBuyAccum = autoBuyAccum + dt
@@ -1222,7 +1534,6 @@ RunService.Heartbeat:Connect(function(dt)
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
-    -- Find nearest candidate prompt
     local best, bestDist = nil, math.huge
     for prompt in pairs(autoBuyPrompts) do
         pcall(function()
@@ -1240,11 +1551,9 @@ RunService.Heartbeat:Connect(function(dt)
     end
 
     if not best then return end
-    -- Respect activation distance
     local maxDist = (best.MaxActivationDistance or 10) + 2
     if bestDist > maxDist then return end
 
-    -- Rate-limit: only refire same prompt every 1.2s
     if best ~= autoBuyLastFired or os.clock() - autoBuyLastFiredTime >= 1.2 then
         autoBuyLastFired = best
         autoBuyLastFiredTime = os.clock()
@@ -1253,22 +1562,18 @@ RunService.Heartbeat:Connect(function(dt)
 end)
 
 -- =====================================================================
--- ANCHOR — keep character fully anchored in place
+-- ANCHOR
 -- =====================================================================
--- ─── setCharacterAnchored: anchor/unanchor all BaseParts ─────────────
 local function setCharacterAnchored(state)
     local char = player.Character
     if not char then return end
     for _, part in ipairs(char:GetDescendants()) do
         pcall(function()
-            if part:IsA("BasePart") then
-                part.Anchored = state
-            end
+            if part:IsA("BasePart") then part.Anchored = state end
         end)
     end
 end
 
--- Anchor main loop — re-anchor any unanchored parts every 0.1s
 RunService.Heartbeat:Connect(function(dt)
     if not anchorEnabled then return end
     anchorAccum = anchorAccum + dt
@@ -1285,7 +1590,6 @@ RunService.Heartbeat:Connect(function(dt)
     end
 end)
 
--- Re-anchor on respawn
 player.CharacterAdded:Connect(function()
     task.wait(0.5)
     if anchorEnabled then setCharacterAnchored(true) end
@@ -1296,7 +1600,7 @@ if anchorEnabled then
 end
 
 -- =====================================================================
--- ANTI-RAGDOLL — break ragdoll constraints + reset state
+-- ANTI-RAGDOLL
 -- =====================================================================
 local function runAntiRagdoll()
     local char = player.Character
@@ -1305,13 +1609,11 @@ local function runAntiRagdoll()
     local root = char:FindFirstChild("HumanoidRootPart")
     if not hum or not root then return end
 
-    -- Determine ragdoll status
     local state = hum:GetState()
     local ragdolled = state == Enum.HumanoidStateType.Physics
         or state == Enum.HumanoidStateType.Ragdoll
         or state == Enum.HumanoidStateType.FallingDown
 
-    -- Also check the "RagdollEndTime" attribute
     if not ragdolled then
         local endTime = player:GetAttribute("RagdollEndTime")
         if endTime then
@@ -1324,7 +1626,6 @@ local function runAntiRagdoll()
 
     if not ragdolled then return end
 
-    -- Destroy ragdoll joints
     for _, v in ipairs(char:GetDescendants()) do
         pcall(function()
             if v:IsA("BallSocketConstraint")
@@ -1334,17 +1635,14 @@ local function runAntiRagdoll()
         end)
     end
 
-    -- Reset the ragdoll timer
     pcall(function()
         player:SetAttribute("RagdollEndTime", Workspace:GetServerTimeNow())
     end)
 
-    -- Restore humanoid to Running state
     if hum.Health > 0 then
         pcall(function() hum:ChangeState(Enum.HumanoidStateType.Running) end)
     end
 
-    -- Snap root: unanchor, zero velocities, upright
     pcall(function()
         root.Anchored = false
         root.AssemblyLinearVelocity  = Vector3.new(0, 0, 0)
@@ -1352,7 +1650,6 @@ local function runAntiRagdoll()
         root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, math.rad(root.Orientation.Y), 0)
     end)
 
-    -- Rebind camera
     pcall(function()
         local cam = Workspace.CurrentCamera
         if cam and cam.CameraSubject ~= hum then
@@ -1361,56 +1658,36 @@ local function runAntiRagdoll()
     end)
 end
 
--- Anti-ragdoll main loop
 RunService.RenderStepped:Connect(function()
     if not ragdollEnabled then return end
     pcall(runAntiRagdoll)
 end)
 
 -- =====================================================================
--- TOGGLE WIRING — attach makeToggle to each UI toggle button
+-- TOGGLE WIRING
 -- =====================================================================
 makeToggle(AutoDetectBtn, AutoDetectFill, AutoDetectLabel, autoOn, function(v)
-    autoOn = v
-    cfgSet("autoOn", v)
-    saveConfig()
+    autoOn = v; cfgSet("autoOn", v); saveConfig()
 end)
-
 makeToggle(SoundsBtn, SoundsFill, SoundsLabel, soundsOn, function(v)
-    soundsOn = v
-    cfgSet("soundsOn", v)
-    saveConfig()
+    soundsOn = v; cfgSet("soundsOn", v); saveConfig()
 end)
-
 makeToggle(Redeem3Btn, Redeem3Fill, Redeem3Label, redeem3On, function(v)
-    redeem3On = v
-    cfgSet("redeem3On", v)
-    saveConfig()
+    redeem3On = v; cfgSet("redeem3On", v); saveConfig()
 end)
-
 makeToggle(TF1Btn, TF1Fill, TF1Lbl, autoBuyEnabled, function(v)
-    autoBuyEnabled = v
-    cfgSet("autoBuyEnabled", v)
-    saveConfig()
+    autoBuyEnabled = v; cfgSet("autoBuyEnabled", v); saveConfig()
 end)
-
 makeToggle(TF2Btn, TF2Fill, TF2Lbl, anchorEnabled, function(v)
-    anchorEnabled = v
-    cfgSet("anchorEnabled", v)
-    saveConfig()
-    setCharacterAnchored(v)   -- apply immediately
+    anchorEnabled = v; cfgSet("anchorEnabled", v); saveConfig(); setCharacterAnchored(v)
 end)
-
 makeToggle(TF3Btn, TF3Fill, TF3Lbl, ragdollEnabled, function(v)
-    ragdollEnabled = v
-    cfgSet("ragdollEnabled", v)
-    saveConfig()
+    ragdollEnabled = v; cfgSet("ragdollEnabled", v); saveConfig()
 end)
-
-makeToggle(TF4Btn, TF4Fill, TF4Lbl, false)   -- Anti Lag: UI-only, no effect
+makeToggle(TF4Btn, TF4Fill, TF4Lbl, false)
 
 -- =====================================================================
--- START/STOP BUTTON + KEYBIND
+-- START/STOP + KEYBIND
 -- =====================================================================
 StartStopBtn.MouseButton1Click:Connect(function()
     setRunning(not running)
@@ -1431,13 +1708,12 @@ local notifyRemote = resolveNotifyRemote()
 if notifyRemote then
     listenConnection = notifyRemote.OnClientEvent:Connect(function(...)
         local text = stripRich(tostring((...) or ""))
-        text = text:match("^%s*(.-)%s*$") or ""   -- trim
+        text = text:match("^%s*(.-)%s*$") or ""
         if text == "" then return end
         pcall(processText, text)
     end)
 end
 
--- Expose a manual stop function on the executor env
 if getgenv then
     getgenv().StopShoxRedeemer = function()
         if listenConnection then
@@ -1447,6 +1723,7 @@ if getgenv then
         autoBuyEnabled = false
         anchorEnabled  = false
         ragdollEnabled = false
+        if ShoxIntroGui then pcall(function() ShoxIntroGui:Destroy() end) end
         if v1 then v1:Destroy() end
     end
 end
@@ -1454,7 +1731,6 @@ end
 -- =====================================================================
 -- RESPAWN HANDLING
 -- =====================================================================
--- ─── resetUIState: clear capture state + stop loop ───────────────────
 local function resetUIState()
     _capturedParts = {}
     _submitting = false
@@ -1463,7 +1739,6 @@ local function resetUIState()
     setRunning(false)
 end
 
--- ─── bindCharacter: hook Died event on humanoid ──────────────────────
 local function bindCharacter(char)
     if not char then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
@@ -1482,6 +1757,7 @@ if player.Character then bindCharacter(player.Character) end
 -- =====================================================================
 -- FINALIZE
 -- =====================================================================
-setRunning(false)         -- start in OFF state
-v1.Parent = parent        -- attach ScreenGui
+setRunning(false)
+-- Erst GUI attach, dann Intro ist bereits über DisplayOrder drüber
+v1.Parent = parent
 return v1
