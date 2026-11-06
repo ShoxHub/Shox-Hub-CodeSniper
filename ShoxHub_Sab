@@ -1,271 +1,244 @@
 -- =========================================================================
--- SHOX CODE REDEEMER — Ultimate Edition
+-- SHOX HUB CODE SNIPER v1.0
 -- =========================================================================
 local cloneref = cloneref or function(x) return x end
-local Players           = cloneref(game:GetService("Players"))
-local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
-local UIS               = cloneref(game:GetService("UserInputService"))
-local TweenService      = cloneref(game:GetService("TweenService"))
-local RunService        = cloneref(game:GetService("RunService"))
-local Workspace         = cloneref(game:GetService("Workspace"))
-local SoundService      = cloneref(game:GetService("SoundService"))
-local HttpService       = cloneref(game:GetService("HttpService"))
-local Lighting          = cloneref(game:GetService("Lighting"))
-local MaterialService   = cloneref(game:GetService("MaterialService"))
+local function svc(name) return cloneref(game:GetService(name)) end
+
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local Players, ReplicatedStorage, UIS, TweenService, RunService, SoundService, Lighting =
+    svc("Players"), svc("ReplicatedStorage"), svc("UserInputService"), svc("TweenService"),
+    svc("RunService"), svc("SoundService"), svc("Lighting")
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local getupvalues_    = debug and debug.getupvalues or getupvalues
+local getupvalues_    = (debug and debug.getupvalues) or getupvalues
 local getconnections_ = getconnections or (debug and debug.getconnections)
-local setupvalue_     = debug and debug.setupvalue or setupvalue
-local writeClipboard  = setclipboard or toclipboard or (syn and syn.write_clipboard)
+local setupvalue_     = (debug and debug.setupvalue) or setupvalue
 
-repeat task.wait() until game:IsLoaded()
+print("[Shox] Code Sniper starting")
 
 -- =========================================================================
--- [1] CTD-STYLE INTRO (identisch mit CTD Auto Farm)
+-- [1] INTRO (Shox Hub beat intro)
 -- =========================================================================
-local ShoxIntro = {
-    Running = true,
-    Letters = {"S", "H", "O", "X", "H", "U", "B"},
-    Beats = {
-        {0.05, 1, "a"}, {0.52, 1, "b"}, {0.84, 0.6}, {1.28, 0.9},
-        {1.58, 0.5}, {1.88, 0.9}, {2.11, 0.6}, {2.48, 2.2, "drop"},
-        {3.15, 1}, {3.74, 1}, {4.34, 1.2}, {4.75, 1.7, "end"},
-    },
-    IntroUrl = "https://files.catbox.moe/ocdxaf.ogg",
-    Dir = "CodeSniper",
-    MusicDir = "CodeSniper/music",
-}
-local ShoxIntroGui, ShoxIntroSound, ShoxIntroHeartbeat
-
-local function introMake(class, props, parent)
-    local obj = Instance.new(class)
-    for k, v in pairs(props) do obj[k] = v end
-    if parent then obj.Parent = parent end
-    return obj
-end
-local function introTween(obj, props, duration, style, direction)
-    if not obj or not obj.Parent then return nil end
-    local t = TweenService:Create(obj, TweenInfo.new(duration or 0.25, style or Enum.EasingStyle.Quint, direction or Enum.EasingDirection.Out), props)
-    t:Play()
-    return t
-end
-local function introParent()
-    local ok, hui = pcall(function() return gethui and gethui() end)
-    if ok and hui then return hui end
-    return player:FindFirstChildOfClass("PlayerGui") or game:GetService("CoreGui")
-end
-local function introFinish()
-    ShoxIntro.Running = false
-    if ShoxIntroHeartbeat then ShoxIntroHeartbeat:Disconnect(); ShoxIntroHeartbeat = nil end
-    if ShoxIntroSound then pcall(function() ShoxIntroSound:Stop(); ShoxIntroSound:Destroy() end); ShoxIntroSound = nil end
-    if ShoxIntroGui then
-        local gui = ShoxIntroGui; ShoxIntroGui = nil
-        introTween(gui:FindFirstChild("IntroBG"), {BackgroundTransparency = 1}, 0.25)
-        for _, obj in ipairs(gui:GetDescendants()) do
-            if obj:IsA("TextLabel") then introTween(obj, {TextTransparency = 1}, 0.2)
-            elseif obj:IsA("Frame") and obj.Name ~= "IntroBG" then introTween(obj, {BackgroundTransparency = 1}, 0.2) end
-        end
-        task.delay(0.28, function() if gui and gui.Parent then gui:Destroy() end end)
-    end
-end
-local function introSpark(stage, letters, count, wide, accent)
-    for _ = 1, count do
-        local angle = math.random() * math.pi * 2
-        local distance = (wide and 260 or 130) * (0.4 + math.random() * 0.8)
-        local x = letters[math.random(1, #letters)].x
-        local p = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, x, 0.5, -10),
-            Size = UDim2.fromOffset(6, 6), Rotation = math.random(0, 90), BackgroundColor3 = accent, BorderSizePixel = 0}, stage)
-        introTween(p, {Position = UDim2.new(0.5, x + math.cos(angle) * distance, 0.5, -10 + math.sin(angle) * distance),
-            BackgroundTransparency = 1, Size = UDim2.fromOffset(2, 2)}, 0.55)
-        task.delay(0.6, function() if p and p.Parent then p:Destroy() end end)
-    end
-end
-local function introRing(stage, accent, thickness)
-    local ring = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, -10),
-        Size = UDim2.fromOffset(40, 40), BackgroundTransparency = 1, BorderSizePixel = 0}, stage)
-    introMake("UICorner", {CornerRadius = UDim.new(1, 0)}, ring)
-    local stroke = introMake("UIStroke", {Thickness = thickness, Color = accent}, ring)
-    introTween(ring, {Size = UDim2.fromOffset(820, 820)}, 0.7)
-    introTween(stroke, {Transparency = 1}, 0.7)
-    task.delay(0.8, function() if ring and ring.Parent then ring:Destroy() end end)
-end
-local function introPlay()
-    local introThemes = {
-        Black   = Color3.fromRGB(175, 175, 190),
-        White   = Color3.fromRGB(55, 65, 80),
-        Blue    = Color3.fromRGB(35, 125, 255),
-        Lava    = Color3.fromRGB(255, 83, 35),
-        Neutral = Color3.fromRGB(125, 130, 140),
+do
+    local ShoxIntro = {
+        Running = true,
+        Letters = {"S", "H", "O", "X", "H", "U", "B"},
+        Beats = {
+            {0.05, 1, "a"}, {0.52, 1, "b"}, {0.84, 0.6}, {1.28, 0.9},
+            {1.58, 0.5}, {1.88, 0.9}, {2.11, 0.6}, {2.48, 2.2, "drop"},
+            {3.15, 1}, {3.74, 1}, {4.34, 1.2}, {4.75, 1.7, "end"},
+        },
+        IntroUrl = "https://files.catbox.moe/ocdxaf.ogg",
+        Dir = "CodeSniper",
+        MusicDir = "CodeSniper/music",
     }
-    local savedIntroTheme = "Neutral"
-    pcall(function()
-        if isfile and readfile and isfile("FictionHub.json") then
-            local cfg = HttpService:JSONDecode(readfile("FictionHub.json"))
-            if type(cfg) == "table" and introThemes[cfg.themeColor] then savedIntroTheme = cfg.themeColor end
-        end
-    end)
-    local accent   = introThemes[savedIntroTheme]
-    local subColor = savedIntroTheme == "White" and Color3.fromRGB(75, 80, 95) or Color3.fromRGB(190, 200, 215)
-    local introParent_ = introParent()
-    pcall(function()
-        local old = introParent_:FindFirstChild("ShoxHubIntro") or introParent_:FindFirstChild("ShoxCodeSniperIntro")
-        if old then old:Destroy() end
-    end)
-    local gui = introMake("ScreenGui", {Name = "ShoxHubIntro", ResetOnSpawn = false, IgnoreGuiInset = true,
-        DisplayOrder = 2000005, ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, introParent_)
-    pcall(function() if syn and syn.protect_gui then syn.protect_gui(gui) end end)
-    ShoxIntroGui = gui
-    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
-    local base = math.clamp(math.min(viewport.X * 0.6 / 376, viewport.Y * 0.4 / 80), 0.5, 3)
-    local bg = introMake("Frame", {Name = "IntroBG", Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Color3.fromRGB(10, 22, 40), BackgroundTransparency = 1, BorderSizePixel = 0, Active = false}, gui)
-    introTween(bg, {BackgroundTransparency = 0}, 0.3)
-    local stage = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Active = false}, gui)
-    local stageScale = introMake("UIScale", {Scale = base}, stage)
-    local letters = {}
-    for i, character in ipairs(ShoxIntro.Letters) do
-        local x = -163 + (i - 1) * 50 + (i >= 5 and 26 or 0)
-        local wrap = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, x, 0.5, -10),
-            Size = UDim2.fromOffset(50, 80), BackgroundTransparency = 1, BorderSizePixel = 0, Active = false}, stage)
-        local letterScale = introMake("UIScale", {Scale = 1}, wrap)
-        local label = introMake("TextLabel", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-            Text = character, Font = Enum.Font.GothamBlack, TextSize = 76, TextColor3 = accent, TextTransparency = 1, Active = false}, wrap)
-        letters[i] = {w = wrap, us = letterScale, lb = label, x = x, hit = -10, amp = 0, rev = math.huge}
+    local ShoxIntroGui, ShoxIntroSound, ShoxIntroHeartbeat
+
+    local function introMake(class, props, parent)
+        local obj = Instance.new(class)
+        for k, v in pairs(props) do obj[k] = v end
+        if parent then obj.Parent = parent end
+        return obj
     end
-    local line = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 52),
-        Size = UDim2.fromOffset(0, 4), BackgroundColor3 = accent, BorderSizePixel = 0}, stage)
-    local subtitle = introMake("TextLabel", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 80),
-        Size = UDim2.fromOffset(376, 22), BackgroundTransparency = 1, Text = "discord.gg/EA7xS26mA9",
-        Font = Enum.Font.GothamBold, TextSize = 17, TextColor3 = subColor, TextTransparency = 1}, stage)
-    local flash = introMake("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = accent,
-        BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 5, Active = false}, gui)
-    local skip = introMake("TextButton", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 14),
-        Size = UDim2.fromOffset(78, 32), BackgroundColor3 = Color3.fromRGB(24, 48, 80), Text = "Skip",
-        TextColor3 = Color3.fromRGB(225, 242, 255), Font = Enum.Font.GothamBold, TextSize = 14,
-        AutoButtonColor = false, BorderSizePixel = 0, ZIndex = 10, Active = true}, gui)
-    introMake("UICorner", {CornerRadius = UDim.new(0, 9)}, skip)
-    introMake("UIStroke", {Color = accent, Thickness = 1, Transparency = 0.55}, skip)
-    skip.Activated:Connect(function() introFinish() end)
-    local timeline, beatIndex = 0, 1
-    local pulse, shake, flashAlpha, underline, subtitleAlpha = 0, 0, 0, 0, 0
-    local startedAt = os.clock()
-    local audioStarted = false
-    local function fireBeat(beat)
-        local strength, kind = beat[2], beat[3]
-        pulse = math.max(pulse, 0.05 + 0.06 * strength)
-        shake = math.max(shake, 6 * strength)
-        flashAlpha = math.max(flashAlpha, math.min(0.1 * strength, 0.35))
-        local first, last, amplitude = 1, #letters, 0.3 * strength
-        if kind == "a" then first, last, amplitude = 1, 4, 1.6
-        elseif kind == "b" then first, last, amplitude = 5, 7, 1.6 end
-        for i = first, last do
-            local e = letters[i]
-            e.hit = timeline + (i - first) * 0.035
-            e.amp = amplitude
-            if amplitude > 1 then e.rev = e.hit end
-        end
-        if kind == "drop" then
-            pulse, shake, flashAlpha = 0.35, 26, 0.75
-            introRing(stage, accent, 6)
-            task.delay(0.12, function() if ShoxIntro.Running then introRing(stage, accent, 3) end end)
-            introSpark(stage, letters, 24, true, accent)
-        elseif kind == "end" then
-            pulse, shake, flashAlpha = 0.3, 20, 0.6
-            introRing(stage, accent, 5)
-            introSpark(stage, letters, 18, true, accent)
-        else
-            introSpark(stage, letters, math.floor(4 * strength) + 2, false, accent)
+    local function introTween(obj, props, duration, style, direction)
+        if not obj or not obj.Parent then return nil end
+        local t = TweenService:Create(obj, TweenInfo.new(duration or 0.25, style or Enum.EasingStyle.Quint, direction or Enum.EasingDirection.Out), props)
+        t:Play()
+        return t
+    end
+    local function introParent()
+        local ok, hui = pcall(function() return gethui and gethui() end)
+        if ok and hui then return hui end
+        return player:FindFirstChildOfClass("PlayerGui") or game:GetService("CoreGui")
+    end
+    local function introFinish()
+        ShoxIntro.Running = false
+        if ShoxIntroHeartbeat then ShoxIntroHeartbeat:Disconnect(); ShoxIntroHeartbeat = nil end
+        if ShoxIntroSound then pcall(function() ShoxIntroSound:Stop(); ShoxIntroSound:Destroy() end); ShoxIntroSound = nil end
+        if ShoxIntroGui then
+            local gui = ShoxIntroGui; ShoxIntroGui = nil
+            introTween(gui:FindFirstChild("IntroBG"), {BackgroundTransparency = 1}, 0.25)
+            for _, obj in ipairs(gui:GetDescendants()) do
+                if obj:IsA("TextLabel") then introTween(obj, {TextTransparency = 1}, 0.2)
+                elseif obj:IsA("Frame") and obj.Name ~= "IntroBG" then introTween(obj, {BackgroundTransparency = 1}, 0.2) end
+            end
+            task.delay(0.28, function() if gui and gui.Parent then gui:Destroy() end end)
         end
     end
-    local sound = ShoxIntroSound
-    local fadeStart, fadeEnd = 4.95, 5.5
-    ShoxIntroHeartbeat = RunService.Heartbeat:Connect(function(dt)
-        if not ShoxIntro.Running then return end
-        if sound and sound.IsPlaying then audioStarted = true; timeline = sound.TimePosition
-        elseif audioStarted then timeline = timeline + dt
-        else timeline = timeline + dt; if os.clock() - startedAt > 8 then introFinish(); return end end
-        while ShoxIntro.Beats[beatIndex] and timeline >= ShoxIntro.Beats[beatIndex][1] do
-            fireBeat(ShoxIntro.Beats[beatIndex]); beatIndex = beatIndex + 1
+    local function introSpark(stage, letters, count, wide, accent)
+        for _ = 1, count do
+            local angle = math.random() * math.pi * 2
+            local distance = (wide and 260 or 130) * (0.4 + math.random() * 0.8)
+            local x = letters[math.random(1, #letters)].x
+            local p = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, x, 0.5, -10),
+                Size = UDim2.fromOffset(6, 6), Rotation = math.random(0, 90), BackgroundColor3 = accent, BorderSizePixel = 0}, stage)
+            introTween(p, {Position = UDim2.new(0.5, x + math.cos(angle) * distance, 0.5, -10 + math.sin(angle) * distance),
+                BackgroundTransparency = 1, Size = UDim2.fromOffset(2, 2)}, 0.55)
+            task.delay(0.6, function() if p and p.Parent then p:Destroy() end end)
         end
-        local fade = math.clamp((timeline - fadeStart) / (fadeEnd - fadeStart), 0, 1)
-        pulse = pulse * math.exp(-dt * 7); shake = shake * math.exp(-dt * 9); flashAlpha = flashAlpha * math.exp(-dt * 8)
-        local shakeNow = shake > 0.3 and shake or 0
-        stage.Position = UDim2.new(0.5, (math.random() - 0.5) * 2 * shakeNow, 0.5, (math.random() - 0.5) * 2 * shakeNow)
-        stage.Rotation = (math.random() - 0.5) * 0.3 * shakeNow
-        stageScale.Scale = base * (1 + pulse) * (1 + fade * 0.5)
-        flash.BackgroundTransparency = 1 - flashAlpha
-        bg.BackgroundTransparency = fade
-        for i, e in ipairs(letters) do
-            local age = timeline - e.hit
-            e.lb.TextTransparency = (timeline >= e.rev) and fade or 1
-            local damp = age >= 0 and math.exp(-age * 5.5) or 0
-            e.w.Position = UDim2.new(0.5, e.x, 0.5, -10 - (age >= 0 and math.abs(math.sin(age * 12)) * 22 * damp or 0))
-            e.w.Rotation = age >= 0 and math.sin(age * 10) * 7 * damp * (i % 2 == 0 and 1 or -1) or 0
-            e.us.Scale = 1 + (age >= 0 and e.amp * math.exp(-age * 8) or 0)
+    end
+    local function introRing(stage, accent, thickness)
+        local ring = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, -10),
+            Size = UDim2.fromOffset(40, 40), BackgroundTransparency = 1, BorderSizePixel = 0}, stage)
+        introMake("UICorner", {CornerRadius = UDim.new(1, 0)}, ring)
+        local stroke = introMake("UIStroke", {Thickness = thickness, Color = accent}, ring)
+        introTween(ring, {Size = UDim2.fromOffset(820, 820)}, 0.7)
+        introTween(stroke, {Transparency = 1}, 0.7)
+        task.delay(0.8, function() if ring and ring.Parent then ring:Destroy() end end)
+    end
+    local function introPlay()
+        local accent   = Color3.fromRGB(125, 130, 140)
+        local subColor = Color3.fromRGB(190, 200, 215)
+        local introParent_ = introParent()
+        pcall(function()
+            local old = introParent_:FindFirstChild("ShoxHubIntro") or introParent_:FindFirstChild("ShoxCodeSniperIntro")
+            if old then old:Destroy() end
+        end)
+        local gui = introMake("ScreenGui", {Name = "ShoxHubIntro", ResetOnSpawn = false, IgnoreGuiInset = true,
+            DisplayOrder = 2000005, ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, introParent_)
+        pcall(function() if syn and syn.protect_gui then syn.protect_gui(gui) end end)
+        ShoxIntroGui = gui
+        local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
+        local base = math.clamp(math.min(viewport.X * 0.6 / 376, viewport.Y * 0.4 / 80), 0.5, 3)
+        local bg = introMake("Frame", {Name = "IntroBG", Size = UDim2.fromScale(1, 1),
+            BackgroundColor3 = Color3.fromRGB(10, 22, 40), BackgroundTransparency = 1, BorderSizePixel = 0, Active = false}, gui)
+        introTween(bg, {BackgroundTransparency = 0}, 0.3)
+        local stage = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Active = false}, gui)
+        local stageScale = introMake("UIScale", {Scale = base}, stage)
+        local letters = {}
+        for i, character in ipairs(ShoxIntro.Letters) do
+            local x = -163 + (i - 1) * 50 + (i >= 5 and 26 or 0)
+            local wrap = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, x, 0.5, -10),
+                Size = UDim2.fromOffset(50, 80), BackgroundTransparency = 1, BorderSizePixel = 0, Active = false}, stage)
+            local letterScale = introMake("UIScale", {Scale = 1}, wrap)
+            local label = introMake("TextLabel", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+                Text = character, Font = Enum.Font.GothamBlack, TextSize = 76, TextColor3 = accent, TextTransparency = 1, Active = false}, wrap)
+            letters[i] = {w = wrap, us = letterScale, lb = label, x = x, hit = -10, amp = 0, rev = math.huge}
         end
-        if timeline >= 0.84 then underline = math.min(1, underline + dt * 3.5) end
-        line.Size = UDim2.fromOffset(376 * underline, 4); line.BackgroundTransparency = fade
-        if timeline >= 3.15 then subtitleAlpha = math.min(1, subtitleAlpha + dt * 5) end
-        subtitle.TextTransparency = math.max(1 - subtitleAlpha, fade)
-        skip.BackgroundTransparency = fade; skip.TextTransparency = fade
-        if timeline >= fadeEnd then introFinish() end
-    end)
-end
-local function introLoadAudio()
-    local folder = ShoxIntro.MusicDir
-    pcall(function() if makefolder then makefolder(ShoxIntro.Dir) end end)
-    pcall(function() if makefolder then makefolder(folder) end end)
-    local assetFn = getcustomasset or getsynasset or getasset
-    if type(assetFn) == "function" and isfile then
-        for _, candidate in ipairs({folder .. "/intro.ogg", folder .. "/intro.mp3"}) do
-            local okFile, exists = pcall(isfile, candidate)
-            if okFile and exists then
-                local okAsset, asset = pcall(assetFn, candidate)
-                if okAsset and type(asset) == "string" then return asset end
+        local line = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 52),
+            Size = UDim2.fromOffset(0, 4), BackgroundColor3 = accent, BorderSizePixel = 0}, stage)
+        local subtitle = introMake("TextLabel", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 80),
+            Size = UDim2.fromOffset(376, 22), BackgroundTransparency = 1, Text = "discord.gg/EA7xS26mA9",
+            Font = Enum.Font.GothamBold, TextSize = 17, TextColor3 = subColor, TextTransparency = 1}, stage)
+        local flash = introMake("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = accent,
+            BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 5, Active = false}, gui)
+        local skip = introMake("TextButton", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 14),
+            Size = UDim2.fromOffset(78, 32), BackgroundColor3 = Color3.fromRGB(24, 48, 80), Text = "Skip",
+            TextColor3 = Color3.fromRGB(225, 242, 255), Font = Enum.Font.GothamBold, TextSize = 14,
+            AutoButtonColor = false, BorderSizePixel = 0, ZIndex = 10, Active = true}, gui)
+        introMake("UICorner", {CornerRadius = UDim.new(0, 9)}, skip)
+        introMake("UIStroke", {Color = accent, Thickness = 1, Transparency = 0.55}, skip)
+        skip.Activated:Connect(function() introFinish() end)
+        local timeline, beatIndex = 0, 1
+        local pulse, shake, flashAlpha, underline, subtitleAlpha = 0, 0, 0, 0, 0
+        local startedAt = os.clock()
+        local audioStarted = false
+        local function fireBeat(beat)
+            local strength, kind = beat[2], beat[3]
+            pulse = math.max(pulse, 0.05 + 0.06 * strength)
+            shake = math.max(shake, 6 * strength)
+            flashAlpha = math.max(flashAlpha, math.min(0.1 * strength, 0.35))
+            local first, last, amplitude = 1, #letters, 0.3 * strength
+            if kind == "a" then first, last, amplitude = 1, 4, 1.6
+            elseif kind == "b" then first, last, amplitude = 5, 7, 1.6 end
+            for i = first, last do
+                local e = letters[i]
+                e.hit = timeline + (i - first) * 0.035
+                e.amp = amplitude
+                if amplitude > 1 then e.rev = e.hit end
+            end
+            if kind == "drop" then
+                pulse, shake, flashAlpha = 0.35, 26, 0.75
+                introRing(stage, accent, 6)
+                task.delay(0.12, function() if ShoxIntro.Running then introRing(stage, accent, 3) end end)
+                introSpark(stage, letters, 24, true, accent)
+            elseif kind == "end" then
+                pulse, shake, flashAlpha = 0.3, 20, 0.6
+                introRing(stage, accent, 5)
+                introSpark(stage, letters, 18, true, accent)
+            else
+                introSpark(stage, letters, math.floor(4 * strength) + 2, false, accent)
             end
         end
+        local fadeStart, fadeEnd = 4.95, 5.5
+        ShoxIntroHeartbeat = RunService.Heartbeat:Connect(function(dt)
+            if not ShoxIntro.Running then return end
+            local sound = ShoxIntroSound
+            if sound and sound.IsPlaying then audioStarted = true; timeline = sound.TimePosition
+            elseif audioStarted then timeline = timeline + dt
+            else timeline = timeline + dt; if os.clock() - startedAt > 8 then introFinish(); return end end
+            while ShoxIntro.Beats[beatIndex] and timeline >= ShoxIntro.Beats[beatIndex][1] do
+                fireBeat(ShoxIntro.Beats[beatIndex]); beatIndex = beatIndex + 1
+            end
+            local fade = math.clamp((timeline - fadeStart) / (fadeEnd - fadeStart), 0, 1)
+            pulse = pulse * math.exp(-dt * 7); shake = shake * math.exp(-dt * 9); flashAlpha = flashAlpha * math.exp(-dt * 8)
+            local shakeNow = shake > 0.3 and shake or 0
+            stage.Position = UDim2.new(0.5, (math.random() - 0.5) * 2 * shakeNow, 0.5, (math.random() - 0.5) * 2 * shakeNow)
+            stage.Rotation = (math.random() - 0.5) * 0.3 * shakeNow
+            stageScale.Scale = base * (1 + pulse) * (1 + fade * 0.5)
+            flash.BackgroundTransparency = 1 - flashAlpha
+            bg.BackgroundTransparency = fade
+            for i, e in ipairs(letters) do
+                local age = timeline - e.hit
+                e.lb.TextTransparency = (timeline >= e.rev) and fade or 1
+                local damp = age >= 0 and math.exp(-age * 5.5) or 0
+                e.w.Position = UDim2.new(0.5, e.x, 0.5, -10 - (age >= 0 and math.abs(math.sin(age * 12)) * 22 * damp or 0))
+                e.w.Rotation = age >= 0 and math.sin(age * 10) * 7 * damp * (i % 2 == 0 and 1 or -1) or 0
+                e.us.Scale = 1 + (age >= 0 and e.amp * math.exp(-age * 8) or 0)
+            end
+            if timeline >= 0.84 then underline = math.min(1, underline + dt * 3.5) end
+            line.Size = UDim2.fromOffset(376 * underline, 4); line.BackgroundTransparency = fade
+            if timeline >= 3.15 then subtitleAlpha = math.min(1, subtitleAlpha + dt * 5) end
+            subtitle.TextTransparency = math.max(1 - subtitleAlpha, fade)
+            skip.BackgroundTransparency = fade; skip.TextTransparency = fade
+            if timeline >= fadeEnd then introFinish() end
+        end)
     end
-    local rq = request or http_request or (syn and syn.request)
-    local body
-    if type(rq) == "function" then
-        local okReq, response = pcall(rq, {Url = ShoxIntro.IntroUrl, Method = "GET"})
-        if okReq and type(response) == "table" and response.StatusCode == 200 then body = response.Body end
-    end
-    if type(body) ~= "string" or #body < 1000 then
-        local okHttp, response = pcall(function() return game:HttpGet(ShoxIntro.IntroUrl) end)
-        if okHttp and type(response) == "string" and #response > 1000 then body = response end
-    end
-    if type(body) == "string" and #body > 1000 and writefile and type(assetFn) == "function" then
-        local extension = body:sub(1, 4) == "OggS" and "ogg" or "mp3"
-        local savePath = folder .. "/intro." .. extension
-        local okWrite = pcall(writefile, savePath, body)
-        if okWrite then
-            local okAsset, asset = pcall(assetFn, savePath)
-            if okAsset and type(asset) == "string" then return asset end
-        end
-    end
-    return nil
+    task.spawn(function()
+        pcall(function()
+            local folder = ShoxIntro.MusicDir
+            if makefolder then makefolder(ShoxIntro.Dir) end
+            if makefolder then makefolder(folder) end
+            local assetFn = getcustomasset or getsynasset or getasset
+            local asset = nil
+            if type(assetFn) == "function" and isfile then
+                for _, candidate in ipairs({folder .. "/intro.ogg", folder .. "/intro.mp3"}) do
+                    local okFile, exists = pcall(isfile, candidate)
+                    if okFile and exists then
+                        local okAsset, a = pcall(assetFn, candidate)
+                        if okAsset and type(a) == "string" then asset = a break end
+                    end
+                end
+            end
+            if not asset then
+                local body = game:HttpGet(ShoxIntro.IntroUrl)
+                if type(body) == "string" and #body > 1000 and writefile and type(assetFn) == "function" then
+                    local ext = body:sub(1, 4) == "OggS" and "ogg" or "mp3"
+                    local path = folder .. "/intro." .. ext
+                    if pcall(writefile, path, body) then
+                        local okAsset, a = pcall(assetFn, path)
+                        if okAsset and type(a) == "string" then asset = a end
+                    end
+                end
+            end
+            if asset and ShoxIntro.Running then
+                local sound = Instance.new("Sound")
+                sound.Name = "ShoxIntroSound"
+                sound.SoundId = asset; sound.Volume = 0.6; sound.Looped = false
+                sound.Parent = SoundService; ShoxIntroSound = sound
+                pcall(function() sound:Play() end)
+            end
+        end)
+        if ShoxIntro.Running then introPlay() end
+    end)
 end
-task.spawn(function()
-    local asset = nil
-    pcall(function() asset = introLoadAudio() end)
-    if not ShoxIntro.Running then return end
-    if asset then
-        local sound = Instance.new("Sound")
-        sound.Name = "ShoxCodeSniperIntroAudio"
-        sound.SoundId = asset; sound.Volume = 0.6; sound.Looped = false
-        sound.Parent = SoundService; ShoxIntroSound = sound
-        pcall(function() sound:Play() end)
-    end
-    introPlay()
-end)
 
 -- =========================================================================
--- [2] CONFIG
+-- [2] CONFIG & STATE
 -- =========================================================================
 local CONFIG_FILE = "Shox_cfg.txt"
 local config = {}
@@ -291,7 +264,8 @@ local function saveConfig()
 end
 local function cfgBool(key, def)
     local v = config[key]
-    if v == "1" then return true end; if v == "0" then return false end
+    if v == "1" then return true end
+    if v == "0" then return false end
     return def
 end
 local function cfgNum(key, def) return tonumber(config[key]) or def end
@@ -300,237 +274,240 @@ local function cfgSet(key, val)
 end
 loadConfig()
 
-local parent = (gethui and gethui() or game:GetService("CoreGui"))
-local old = parent:FindFirstChild("ShoxCodeRedeemer")
-if old then old:Destroy() end
+local S = {
+    running = false,
+    autoOn = cfgBool("autoOn", true),
+    wordsIndex = math.clamp(math.floor(cfgNum("wordsIndex", 3)), 1, 4),
+    soundsOn = cfgBool("soundsOn", true),
+    redeem3On = cfgBool("redeem3On", true),
+    autoTypeOn = cfgBool("autoTypeOn", true),
+    spamOnListen = cfgBool("spamOnListen", false),
+    wordMode = cfgBool("wordMode", false),
+    ignoreSystem = cfgBool("ignoreSystem", true),
+    spamDelay = cfgNum("spamDelay", 0.15),
+    parts = {}, seen = {}, submitting = false, spamming = false,
+    lastCode = nil, stamp = 0,
+    origExecute = nil, anchor = false, ragdoll = false, fps = false, autoBuy = false,
+    oldQuality = nil, oldShadows = nil,
+}
+local UI = {}
 
--- =========================================================================
--- [3] STATE
--- =========================================================================
-local running       = false
-local autoOn        = cfgBool("autoOn", true)
-local wordsValues   = {1, 2, 3, 4}
-local wordsIndex    = cfgNum("wordsIndex", 3)
-if wordsIndex < 1 or wordsIndex > 4 then wordsIndex = 3 end
-local soundsOn      = cfgBool("soundsOn", true)
-local redeem3On     = cfgBool("redeem3On", true)
-local autoTypeOn    = cfgBool("autoTypeOn", true)
-local spamOnListen  = cfgBool("spamOnListen", false)
-local wordMode      = cfgBool("wordMode", false)
-local spamDelay     = cfgNum("spamDelay", 0.15)
-local ignoreSystem  = cfgBool("ignoreSystem", true)
-local duoMode       = cfgBool("duoMode", false)
-
-local _seen = {}
-local _capturedParts = {}
-local _lastBox = nil
-local _submitting = false
-local _redeemStatus, _redeemPendingCode, _redeemOriginalCode, _redeemStartTime = nil, nil, nil, 0
-local _isSpamming, _spamThread, _spamCount = false, nil, 0
-local _lastCodeText = nil
-local _eventBlocked = false
-local _fpsEnabled = false
-local _antiLagEnabled = false
-local _autoBuyEnabled = false
-local _anchorEnabled = false
-
-local function getWordCount() return wordsValues[wordsIndex] end
-
--- =========================================================================
--- [4] B/W COLOR PALETTE
--- =========================================================================
 local C = {
-    BG_DARK    = Color3.fromRGB(12, 12, 12),
-    BG_ROW     = Color3.fromRGB(22, 22, 22),
-    BG_CARD    = Color3.fromRGB(30, 30, 30),
-    BG_INPUT   = Color3.fromRGB(38, 38, 38),
-    ACTIVE     = Color3.fromRGB(255, 255, 255),
-    INACTIVE   = Color3.fromRGB(60, 60, 60),
-    ACTIVE_TXT = Color3.fromRGB(0, 0, 0),
-    INACTIVE_TXT = Color3.fromRGB(255, 255, 255),
-    TEXT       = Color3.fromRGB(255, 255, 255),
-    TEXT_MUTED = Color3.fromRGB(160, 160, 160),
-    TEXT_ON    = Color3.fromRGB(0, 0, 0),
-    STROKE     = Color3.fromRGB(80, 80, 80),
-    STROKE_DARK = Color3.fromRGB(45, 45, 45),
-    ON         = Color3.fromRGB(255, 255, 255),
-    OFF        = Color3.fromRGB(55, 55, 55),
-    OK         = Color3.fromRGB(200, 200, 200),
-    ERR        = Color3.fromRGB(100, 100, 100),
+    BG_DARK = Color3.fromRGB(12, 12, 12), BG_ROW = Color3.fromRGB(22, 22, 22),
+    BG_CARD = Color3.fromRGB(30, 30, 30), BG_INPUT = Color3.fromRGB(38, 38, 38),
+    ACTIVE = Color3.fromRGB(255, 255, 255), INACTIVE = Color3.fromRGB(60, 60, 60),
+    ACTIVE_TXT = Color3.fromRGB(0, 0, 0), INACTIVE_TXT = Color3.fromRGB(255, 255, 255),
+    TEXT = Color3.fromRGB(255, 255, 255), TEXT_MUTED = Color3.fromRGB(160, 160, 160),
+    TEXT_ON = Color3.fromRGB(0, 0, 0), STROKE = Color3.fromRGB(80, 80, 80),
+    STROKE_DARK = Color3.fromRGB(45, 45, 45), ON = Color3.fromRGB(255, 255, 255),
+    OFF = Color3.fromRGB(55, 55, 55),
 }
 
 -- =========================================================================
--- [5] RESPONSE PATTERNS
+-- [3] UI HELPERS
 -- =========================================================================
-local SUCCESS_PATTERNS = {
-    "successfully redeemed", "redeemed successfully", "code redeemed",
-    "code has been redeemed", "code accepted", "code activated",
-    "code is valid", "valid code", "you redeemed", "you have redeemed",
-    "success!", "reward claimed", "you got the", "code worked",
-    "redeemed!", "successfully claimed", "reward redeemed",
-    "successfully used", "code successfully",
-}
-local FAIL_PATTERNS = {
-    "invalid code", "code is invalid", "code invalid", "code is not valid",
-    "not a valid code", "expired code", "code expired", "code has expired",
-    "code is expired", "already redeemed", "already used", "already been used",
-    "already been redeemed", "you already used", "you already redeemed",
-    "unknown code", "code not found", "code doesn't exist", "code does not exist",
-    "wrong code", "incorrect code", "code is incorrect", "failed to redeem",
-    "redeem failed", "could not redeem", "cannot redeem",
-}
-local TRIGGERS = {
-    "use code", "code is", "code:", "use:", "redeem code",
-    "code -", "new code", "code =", "codigo:", "codigo es",
-}
+local FONT_FAMILY = "rbxasset://fonts/families/Montserrat.json"
+local FH = Font.new(FONT_FAMILY, Enum.FontWeight.Heavy)
+local FX = Font.new(FONT_FAMILY, Enum.FontWeight.ExtraBold)
+local FM = Font.new(FONT_FAMILY, Enum.FontWeight.Medium)
 
--- =========================================================================
--- [6] RIDDLE CLASSIFIER (Traced)
--- =========================================================================
-local function classifyDrop(raw)
-    local text  = tostring(raw or "")
-    local lower = text:lower()
-    local words = {}
-    for w in text:gmatch("[%w']+") do words[#words + 1] = w end
-    local wordCount = #words
-    if wordCount == 0 then return nil end
-    local padded = " " .. lower:gsub("[^%w]", " ") .. " "
-    if lower:find("?", 1, true) then return "riddle" end
-    for _, phrase in ipairs({
-        " what ", " how ", " which ", " whose ", " when ", " who ",
-        " whats ", " where ", " why ", " guess ", " riddle ", " answer ",
-    }) do
-        if padded:find(phrase, 1, true) then return "riddle" end
+local function new(class, props, parent)
+    local obj = Instance.new(class)
+    for k, v in pairs(props or {}) do obj[k] = v end
+    if parent then obj.Parent = parent end
+    return obj
+end
+local function corner(p, r) return new("UICorner", {CornerRadius = UDim.new(0, r)}, p) end
+local function stroke(p, th, col, border, tr)
+    return new("UIStroke", {Thickness = th, Color = col, Transparency = tr or 0,
+        ApplyStrokeMode = border and Enum.ApplyStrokeMode.Border or Enum.ApplyStrokeMode.Contextual}, p)
+end
+
+local function makeBtn(parent, x, y, w, h, r, fillColor, text, size)
+    local btn = new("TextButton", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.new(0, 0, 0),
+        Position = UDim2.new(0, x, 0, y), Size = UDim2.new(0, w, 0, h), AutoButtonColor = false, Text = ""}, parent)
+    corner(btn, r)
+    local fill = new("Frame", {BackgroundColor3 = fillColor, BorderSizePixel = 0,
+        Position = UDim2.new(0, 1, 0, 1), Size = UDim2.new(1, -2, 1, -2)}, btn)
+    corner(fill, r - 1)
+    local lbl = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), FontFace = FH,
+        Text = text, TextColor3 = C.TEXT, TextSize = size}, btn)
+    stroke(lbl, 2, C.STROKE_DARK)
+    return btn, fill, lbl
+end
+
+local function makeRow(parent, y, text, size)
+    local row = new("Frame", {BackgroundColor3 = C.BG_ROW, BorderSizePixel = 0,
+        Position = UDim2.new(0, 10, 0, y), Size = UDim2.new(1, -20, 0, 68)}, parent)
+    corner(row, 12)
+    stroke(row, 1.5, C.STROKE_DARK, true, 0.3)
+    local lbl = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), FontFace = FH,
+        Text = text, TextColor3 = C.TEXT, TextSize = size or 26, TextXAlignment = Enum.TextXAlignment.Left}, row)
+    stroke(lbl, 2, C.STROKE_DARK)
+    new("UIPadding", {PaddingLeft = UDim.new(0, 16)}, lbl)
+    return row, lbl
+end
+
+local function makeToggleButton(parent, x, text)
+    return makeBtn(parent, x, 34, 100, 46, 10, C.INACTIVE, text, 24)
+end
+
+-- onChange darf false zurueckgeben, dann wird der Toggle nicht umgeschaltet
+local function makeToggle(btn, fill, lbl, initial, onChange)
+    local state = initial and true or false
+    local function render()
+        fill.BackgroundColor3 = state and C.ON or C.OFF
+        lbl.TextColor3 = state and C.TEXT_ON or C.TEXT
+        lbl.Text = state and "ON" or "OFF"
     end
-    if padded:find(" my ", 1, true) then return "riddle" end
-    local multiword = wordCount >= 2
-    local hasPlus = multiword and (padded:find(" plus ", 1, true) or lower:find("+", 1, true))
-    if hasPlus then return "riddle" end
-    if wordCount >= 4 and padded:find(" and ", 1, true) then return "riddle" end
-    if lower:find("code", 1, true) then return "code" end
-    for _, phrase in ipairs({ " redeem ", " type ", " enter ", " claim " }) do
-        if padded:find(phrase, 1, true) then return "code" end
-    end
-    if wordCount >= 7 then return "riddle" end
-    if wordCount == 1 then return "code" end
-    if wordCount <= 3 then
-        local good = 0
-        for _, w in ipairs(words) do
-            if #w >= 3 and ((w == w:upper() and w:match("%a")) or w:match("%d")) then good = good + 1 end
+    render()
+    btn.MouseButton1Click:Connect(function()
+        local nextState = not state
+        if onChange then
+            local ok, res = pcall(onChange, nextState)
+            if ok and res == false then return end
         end
-        if good == wordCount then return "code" end
-    end
-    return nil
+        state = nextState
+        render()
+    end)
 end
 
 -- =========================================================================
--- [7] SYSTEM PHRASE FILTER (Traced)
+-- [4] WINDOW
+-- =========================================================================
+local FULL_HEIGHT, MIN_HEIGHT = 690, 72
+local minimized = false
+
+local guiParent = (gethui and gethui()) or game:GetService("CoreGui")
+for _, n in ipairs({"ShoxCodeRedeemer", "ShoxCodeSniper"}) do
+    local oldGui = guiParent:FindFirstChild(n)
+    if oldGui then oldGui:Destroy() end
+end
+
+local gui = new("ScreenGui", {Name = "ShoxCodeSniper", ResetOnSpawn = false, IgnoreGuiInset = true,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 100}, nil)
+pcall(function() gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
+gui.Parent = guiParent
+
+local win = new("Frame", {Name = "ShoxWindow", Active = true, AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.10, BorderSizePixel = 0,
+    Position = UDim2.new(cfgNum("guiXScale", 0.5), cfgNum("guiXOffset", 251), cfgNum("guiYScale", 0.5), cfgNum("guiYOffset", 60)),
+    Size = UDim2.new(0, 560, 0, FULL_HEIGHT), ClipsDescendants = true}, gui)
+corner(win, 18)
+new("UIScale", {Scale = 0.45}, win)
+
+local body = new("Frame", {Name = "Body", BackgroundColor3 = C.BG_DARK, BackgroundTransparency = 0.35,
+    BorderSizePixel = 0, Position = UDim2.new(0, 0, 0, 72), Size = UDim2.new(1, 0, 1, -72)}, win)
+corner(body, 18)
+
+local header = new("Frame", {Name = "Header", Active = true, BackgroundTransparency = 1,
+    ClipsDescendants = true, Size = UDim2.new(1, 0, 0, 72)}, win)
+corner(header, 18)
+
+do
+    local headerBG = new("Frame", {BackgroundColor3 = Color3.fromRGB(20, 20, 20), BackgroundTransparency = 0.15,
+        BorderSizePixel = 0, Size = UDim2.new(1, 0, 1, 0)}, header)
+    corner(headerBG, 18)
+    new("Frame", {BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.55, BorderSizePixel = 0,
+        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 71), Size = UDim2.new(1, -24, 0, 1)}, header)
+
+    local title = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 44), ZIndex = 5,
+        FontFace = FH, Text = "Code Sniper", TextColor3 = C.TEXT, TextSize = 34,
+        TextXAlignment = Enum.TextXAlignment.Left}, header)
+    stroke(title, 2, C.STROKE_DARK)
+    new("UIPadding", {PaddingLeft = UDim.new(0, 12)}, title)
+
+    local sub = new("TextLabel", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 42),
+        Size = UDim2.new(1, 0, 0, 22), ZIndex = 5, FontFace = FX, Text = "discord.gg/EA7xS26mA9",
+        TextColor3 = C.TEXT_MUTED, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Left}, header)
+    stroke(sub, 2, C.STROKE_DARK)
+    new("UIPadding", {PaddingLeft = UDim.new(0, 12)}, sub)
+
+    local minBtn = new("TextButton", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+        BorderSizePixel = 0, Position = UDim2.new(0, 528, 0, 30), Size = UDim2.new(0, 44, 0, 44), ZIndex = 6,
+        AutoButtonColor = false, Text = ""}, header)
+    corner(minBtn, 10)
+    local minFill = new("Frame", {BackgroundColor3 = Color3.fromRGB(15, 15, 15), BorderSizePixel = 0,
+        Position = UDim2.new(0, 2, 0, 2), Size = UDim2.new(1, -4, 1, -4)}, minBtn)
+    corner(minFill, 8)
+    local minIcon = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), FontFace = FH,
+        Text = "−", TextColor3 = C.TEXT, TextSize = 32}, minBtn)
+    stroke(minIcon, 2, C.STROKE_DARK)
+
+    minBtn.MouseButton1Click:Connect(function()
+        minimized = not minimized
+        if minimized then
+            body.Visible = false
+            minIcon.Text = "+"
+            TweenService:Create(win, TweenInfo.new(0.22, Enum.EasingStyle.Quart), {Size = UDim2.new(0, 560, 0, MIN_HEIGHT)}):Play()
+        else
+            TweenService:Create(win, TweenInfo.new(0.22, Enum.EasingStyle.Quart), {Size = UDim2.new(0, 560, 0, FULL_HEIGHT)}):Play()
+            task.delay(0.05, function() if not minimized then body.Visible = true end end)
+            minIcon.Text = "−"
+        end
+    end)
+end
+
+-- =========================================================================
+-- [5] TABS & PAGES
+-- =========================================================================
+UI.tabs = {}
+local function selectTab(which)
+    for key, t in pairs(UI.tabs) do
+        local on = key == which
+        t.page.Visible = on
+        t.fill.BackgroundColor3 = on and C.ACTIVE or C.INACTIVE
+        t.lbl.TextColor3 = on and C.ACTIVE_TXT or C.INACTIVE_TXT
+    end
+end
+do
+    local defs = {{"Redeemer", "Redeemer", 75}, {"TraitFarm", "Trait Farm", 210}, {"Settings", "Settings", 345}, {"Feed", "Feed", 480}}
+    for _, d in ipairs(defs) do
+        local btn, fill, lbl = makeBtn(win, d[3], 111, 125, 58, 12, C.INACTIVE, d[2], 22)
+        local page = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 150),
+            Size = UDim2.new(1, 0, 1, -150), Visible = false}, win)
+        UI.tabs[d[1]] = {fill = fill, lbl = lbl, page = page}
+        btn.MouseButton1Click:Connect(function() selectTab(d[1]) end)
+    end
+end
+
+-- =========================================================================
+-- [6] REMOTE DISCOVERY & CODE SUBMISSION
 -- =========================================================================
 local function stripTags(s)
     if type(s) ~= "string" then return tostring(s) end
     return (s:gsub("<[^>]->", ""))
 end
-local function compactStr(s)
-    return stripTags(tostring(s or "")):lower():gsub("[^%w]", "")
-end
-local SYS_PHRASES = {
-    "code is", "use code", "font color", "fontcolour", "fontcolor", "font colour",
-    "sammy has activated bubblegum machine", "sammy activated",
-    "coins shop", "brainrot trader", "robux shop", "robuxshop",
-    "spin wheel", "spinwheel", "trade plaza", "tradeplaza",
-    "event has started", "eventhasstarted", "allowfriends", "setcreatorid",
-    "to buy this", "tobuythis", "your base is already locked", "your base is full",
-    "request failed", "you locked your base for", "you got a free spin",
-    "broke into your base", "someone is stealing", "trade has been completed",
-    "tradehasbeencompleted", "event has been activated", "has been activated",
-    "has activated", "base is already locked", "you locked your base",
-    "you have locked your base", "locked your base",
-    "brainrot express has arrived", "brainrot express has arrv",
-    "brainrot express leaving in",
-}
-local SYS_PREFIXES = { "sammy:", "spydersammy:" }
-local SYS_COMPACT = {}
-do
-    local seen = {}
-    for _, phrase in ipairs(SYS_PHRASES) do
-        local c = compactStr(phrase)
-        if c ~= "" and not seen[c] then
-            seen[c] = true
-            SYS_COMPACT[#SYS_COMPACT + 1] = { phrase = phrase, compact = c }
-        end
-    end
-end
-local function isSystemPhrase(text)
-    if not ignoreSystem then return false end
-    local lower = stripTags(tostring(text or "")):lower()
-    local noSpaces = lower:gsub("%s+", "")
-    for _, p in ipairs(SYS_PREFIXES) do
-        if noSpaces:find(p, 1, true) then return true, p end
-    end
-    local c = compactStr(lower)
-    for _, entry in ipairs(SYS_COMPACT) do
-        if c:find(entry.compact, 1, true) then return true, entry.phrase end
-    end
-    return false
-end
 
--- =========================================================================
--- [8] REMOTE DISCOVERY (getupvalues method)
--- =========================================================================
 local function remoteInstancesOf(func)
-    if not getupvalues_ then return {} end
-    local ok, ups = pcall(getupvalues_, func)
     local out = {}
-    if ok and ups then
+    if not getupvalues_ then return out end
+    local ok, ups = pcall(getupvalues_, func)
+    if ok and type(ups) == "table" then
         for _, v in pairs(ups) do
-            if typeof(v) == "Instance"
-               and (v:IsA("RemoteEvent") or v:IsA("RemoteFunction") or v:IsA("UnreliableRemoteEvent"))
-               and v.Parent and v.Parent.Name == "Net" then
+            if typeof(v) == "Instance" and (v:IsA("RemoteEvent") or v:IsA("UnreliableRemoteEvent"))
+                and v.Parent and v.Parent.Name == "Net" then
                 out[#out + 1] = v
             end
         end
     end
     return out
 end
+
 local function findNotificationRemote()
-    if _G.PhiNotifyRemote then return _G.PhiNotifyRemote end
+    if _G.PhiNotifyRemote and _G.PhiNotifyRemote.Parent then return _G.PhiNotifyRemote end
     local ok, mod = pcall(function()
-        return require(ReplicatedStorage.Controllers:FindFirstChild("NotificationController", true))
+        local controllers = ReplicatedStorage:FindFirstChild("Controllers")
+        local ctl = controllers and controllers:FindFirstChild("NotificationController", true)
+        return ctl and require(ctl)
     end)
     if ok and type(mod) == "table" and type(mod.Start) == "function" then
         local r = remoteInstancesOf(mod.Start)[1]
         if r then _G.PhiNotifyRemote = r; return r end
     end
-    local ok2, Net = pcall(function()
-        return ReplicatedStorage:WaitForChild("Packages", 5):WaitForChild("Net", 5)
-    end)
-    if not ok2 or not Net then return nil end
-    local getinfo = debug and (debug.getinfo or debug.info)
-    if getgc and getinfo and getconnections then
-        for _, d in ipairs(Net:GetDescendants()) do
-            if d:IsA("RemoteEvent") then
-                local ok3, cs = pcall(getconnections, d.OnClientEvent)
-                if ok3 and type(cs) == "table" then
-                    for _, c in ipairs(cs) do
-                        local f, fn = pcall(function() return c.Function end)
-                        if f and type(fn) == "function" then
-                            local i, info = pcall(getinfo, fn)
-                            if i and tostring(info.short_src or info.source or ""):find("NotificationController", 1, true) then
-                                _G.PhiNotifyRemote = d
-                                return d
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
     return nil
 end
 
--- =========================================================================
--- [9] SUBMISSION (fireConnections + clearBooleans)
--- =========================================================================
 local function clearBooleans(fn, depth)
     if not (fn and setupvalue_ and getupvalues_) then return end
     depth = depth or 1
@@ -542,6 +519,7 @@ local function clearBooleans(fn, depth)
         end
     end
 end
+
 local function fireConnections(signal, ...)
     if not getconnections_ then return false end
     local ok, conns = pcall(getconnections_, signal)
@@ -561,32 +539,34 @@ local function fireConnections(signal, ...)
     end
     return any
 end
+
 local function findCodeBox()
     local codes = playerGui:FindFirstChild("Codes")
     if not codes then return nil end
-    local main = (codes:FindFirstChild("Codes") or codes):FindFirstChild("Main")
-    local box = main and main:FindFirstChild("TextBox")
-    if box and box:IsA("TextBox") then return box end
-    for _, d in ipairs(codes:GetDescendants()) do
-        if d:IsA("TextBox") then return d end
+    local redeem = codes:FindFirstChild("CodeRedeem", true)
+    if redeem then
+        if redeem:IsA("TextBox") then return redeem end
+        local tb = redeem:FindFirstChildWhichIsA("TextBox", true)
+        if tb then return tb end
     end
+    return codes:FindFirstChildWhichIsA("TextBox", true)
 end
+
 local function findConfirmButton()
     local codes = playerGui:FindFirstChild("Codes")
     if not codes then return nil end
-    local codes2 = codes:FindFirstChild("Codes") or codes
-    local confirm = (codes2:FindFirstChild("Main") or codes2):FindFirstChild("Confirm")
-    if confirm and (confirm:IsA("ImageButton") or confirm:IsA("TextButton")) then return confirm end
-    local fallback
     for _, d in ipairs(codes:GetDescendants()) do
         if d:IsA("ImageButton") or d:IsA("TextButton") then
             local n = d.Name:lower()
-            if n:find("confirm") or n:find("submit") or n:find("redeem") or n:find("enter") then return d end
-            fallback = fallback or d
+            local t = d:IsA("TextButton") and d.Text:lower() or ""
+            if n:find("submit") or n:find("confirm") or n:find("redeem") or n:find("enter") or t:find("submit") then
+                return d
+            end
         end
     end
-    return fallback
+    return nil
 end
+
 local function submitCodeAdvanced(text)
     if type(text) ~= "string" or text == "" then return false, "empty" end
     local box = findCodeBox()
@@ -594,1390 +574,383 @@ local function submitCodeAdvanced(text)
     pcall(function() box.Text = text; box.Active = true; box.Selectable = true end)
     local confirm = findConfirmButton()
     if confirm then
-        local a = fireConnections(confirm.MouseButton1Click)
-        local b = fireConnections(confirm.Activated)
-        if a or b then return true, "submitted" end
+        local fired = fireConnections(confirm.MouseButton1Click)
+        if not fired then fired = fireConnections(confirm.Activated) end
+        if fired then return true, "submitted" end
     end
-    local ok = fireConnections(box.FocusLost, true)
-    if ok then return true, "submitted (focus)" end
+    if fireConnections(box.FocusLost, true) then return true, "submitted (focus)" end
     pcall(function() box:CaptureFocus() end)
     task.wait(0.05)
     pcall(function() box:ReleaseFocus(true) end)
     return true, "submitted (release)"
 end
-local function setCodeBoxText(text)
-    if type(text) ~= "string" or text == "" then return end
-    local box = findCodeBox()
-    if not box then return end
-    pcall(function() if box.Text ~= text then box.Text = text end end)
-end
 
 -- =========================================================================
--- [10] EVENT BLOCKER (Traced)
+-- [7] REDEEMER PAGE
 -- =========================================================================
-local eventBlock = {ready = false, why = "EventController unavailable", IsBlocked = function() return false end}
 do
-    local function requireController(name)
-        local folder = ReplicatedStorage:FindFirstChild("Controllers")
-        folder = folder and folder:FindFirstChild(name, true)
-        if not (folder and folder:IsA("ModuleScript")) then return nil end
-        local ok, mod = pcall(require, folder)
-        if ok and type(mod) == "table" then return mod end
-    end
-    local EventController  = requireController("EventController")
-    local EffectController = requireController("EffectController")
-    local valid = EventController and type(EventController.Events) == "table" and type(EventController.Execute) == "function"
-    if not valid then eventBlock.why = "EventController missing"
-    else
-        local tool = _G.__BrainrotEventTool or {}; _G.__BrainrotEventTool = tool
-        tool.origExecute   = tool.origExecute   or EventController.Execute
-        tool.origGetActive = tool.origGetActive or EventController.GetActiveEvents
-        if EffectController then tool.origRun = tool.origRun or EffectController.Run end
-        tool.blocked = tool.blocked or false
-        eventBlock.S = tool
-        eventBlock.IsBlocked = function() return tool.blocked and true or false end
-        local effectsTable
-        local getupvalue_ = debug and debug.getupvalue
-        if getupvalue_ then
-            local ok, v = pcall(getupvalue_, tool.origExecute, 5)
-            if ok and type(v) == "table" then effectsTable = v end
-        end
-        if not tool.shimmed then
-            EventController.GetActiveEvents = function(self)
-                local list = {}
-                if not tool.blocked then
-                    local ok, res = pcall(tool.origGetActive, self)
-                    if ok and type(res) == "table" then for _, e in pairs(res) do list[#list + 1] = e end end
-                end
-                return list
-            end
-            tool.shimmed = true
-        end
-        local function refreshControllers()
-            local lighting = requireController("LightingController")
-            if lighting and type(lighting.Update) == "function" then pcall(function() lighting:Update() end) end
-            local sound = requireController("SoundController")
-            if sound and type(sound.UpdateOST) == "function" then pcall(function() sound:UpdateOST() end) end
-        end
-        local function isSkyEffect(inst)
-            return inst:IsA("Sky") or inst:IsA("Atmosphere") or inst:IsA("Clouds") or inst:IsA("PostEffect")
-        end
-        local function stopAllEffects()
-            if not (EffectController and type(EffectController.ActiveEffects) == "table") then return 0 end
-            local keys = {}
-            for k in pairs(EffectController.ActiveEffects) do keys[#keys + 1] = k end
-            for _, k in ipairs(keys) do
-                local def = type(EffectController.Effects) == "table" and EffectController.Effects[k] or nil
-                EffectController.ActiveEffects[k] = nil
-                if type(def) == "table" then
-                    if type(def.OnUpdate) == "function" then pcall(function() def:OnUpdate() end) end
-                    if type(def.OnStop) == "function" then pcall(function() def:OnStop() end) end
-                end
-            end
-            return #keys
-        end
-        local function clearEventAttrs()
-            local cleared = 0
-            for k, v in pairs(ReplicatedStorage:GetAttributes()) do
-                if type(k) == "string" and v == true and (k:find("Event") or k:find("Phase") or k:find("Hour")) then
-                    pcall(function() ReplicatedStorage:SetAttribute(k, nil) end)
-                    cleared = cleared + 1
-                end
-            end
-            return cleared
-        end
-        local function stopLoopedSounds()
-            local n = 0
-            for _, d in ipairs(workspace:GetDescendants()) do
-                if d:IsA("Sound") and d.Playing and d.Looped then pcall(function() d:Stop() end); n = n + 1 end
-            end
-            return n
-        end
-        eventBlock.Block = function()
-            local cancelled = 0
-            for k, ev in pairs(EventController.Events) do
-                if type(ev) == "table" and rawget(ev, "Active") then
-                    local ok = type(EventController.Cancel) == "function" and pcall(function() return EventController:Cancel(k) end)
-                    if not ok then rawset(ev, "Active", false); rawset(ev, "__started", false) end
-                    cancelled = cancelled + 1
-                end
-            end
-            local effectsKilled = stopAllEffects()
-            if effectsTable then
-                for k, group in pairs(effectsTable) do
-                    if type(group) == "table" then
-                        for _, inst in ipairs(group) do
-                            if typeof(inst) == "Instance" and not isSkyEffect(inst) then pcall(function() inst:Destroy() end) end
-                        end
-                    end
-                    effectsTable[k] = nil
-                end
-            end
-            EventController.Execute = function() return false end
-            if EffectController then EffectController.Run = function() return false, false end end
-            tool.blocked = true
-            refreshControllers()
-            clearEventAttrs()
-            local sounds = stopLoopedSounds()
-            return true, ("blocked %d event(s), %d fx, %d sound(s)"):format(cancelled, effectsKilled, sounds)
-        end
-        eventBlock.Unblock = function()
-            EventController.Execute = tool.origExecute
-            if EffectController and tool.origRun then EffectController.Run = tool.origRun end
-            tool.blocked = false
-            refreshControllers()
-            return true, "unblocked"
-        end
-        eventBlock.ready = true
-        eventBlock.why   = nil
-    end
-end
+    local page = UI.tabs.Redeemer.page
 
--- =========================================================================
--- [11] COOLDOWN DETECTION
--- =========================================================================
-local rejectionCache = { text = "", at = 0 }
-do
-    local function watchTextLabel(lbl)
-        task.defer(function()
-            if not lbl.Parent then return end
-            local targets = lbl:IsA("TextLabel") and { lbl } or lbl:GetDescendants()
-            for _, d in ipairs(targets) do
-                if d:IsA("TextLabel") and d.Text ~= "" then
-                    rejectionCache.text = stripTags(d.Text):lower()
-                    rejectionCache.at = os.clock()
-                    return
-                end
-            end
+    local row1 = makeRow(page, 0, "Words")
+    UI.wordFills, UI.wordLbls = {}, {}
+    for i = 1, 4 do
+        local btn, fill, lbl = makeBtn(row1, 277 + (i - 1) * 68, 34, 60, 46, 10, C.INACTIVE, tostring(i), 28)
+        UI.wordFills[i], UI.wordLbls[i] = fill, lbl
+        btn.MouseButton1Click:Connect(function()
+            S.wordsIndex = i; cfgSet("wordsIndex", i); saveConfig(); UI.renderWords()
         end)
     end
-    local function watchContainer(container)
-        if not container then return end
-        container.DescendantAdded:Connect(watchTextLabel)
-        for _, d in ipairs(container:GetDescendants()) do
-            if d:IsA("TextLabel") then
-                d:GetPropertyChangedSignal("Text"):Connect(function()
-                    if d.Text ~= "" then
-                        rejectionCache.text = stripTags(d.Text):lower()
-                        rejectionCache.at = os.clock()
-                    end
-                end)
-            end
-        end
+
+    local row2, statusLbl = makeRow(page, 76, "Redeemer: Disabled")
+    statusLbl.TextColor3 = C.TEXT_MUTED
+    UI.status = statusLbl
+    UI.startBtn, UI.startFill, UI.startLbl = makeBtn(row2, 446, 34, 160, 46, 10, C.OFF, "OFF [F]", 20)
+
+    local _, progressLbl = makeRow(page, 152, "0/" .. S.wordsIndex)
+    UI.progress = progressLbl
+
+    local row4 = makeRow(page, 228, "Auto Detect")
+    local adBtn, adFill, adLbl = makeToggleButton(row4, 476, "ON")
+    makeToggle(adBtn, adFill, adLbl, S.autoOn, function(v) S.autoOn = v; cfgSet("autoOn", v); saveConfig() end)
+
+    local display = new("Frame", {BackgroundColor3 = C.BG_CARD, BorderSizePixel = 0,
+        Position = UDim2.new(0, 10, 0, 304), Size = UDim2.new(1, -20, 0, 50)}, page)
+    corner(display, 12)
+    stroke(display, 2, C.STROKE, true)
+    UI.codeLabel = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), FontFace = FH,
+        Text = "Code Will Show Here", TextColor3 = C.TEXT, TextSize = 28}, display)
+    stroke(UI.codeLabel, 2, C.STROKE_DARK)
+
+    local spamRow = makeRow(page, 380, "Spam Mode", 22)
+    UI.spamBtn, UI.spamFill, UI.spamLbl = makeToggleButton(spamRow, 476, "OFF")
+    local evtRow = makeRow(page, 456, "Event Block", 22)
+    UI.evtBtn, UI.evtFill, UI.evtLbl = makeToggleButton(evtRow, 476, "OFF")
+end
+
+local function getWordCount() return S.wordsIndex end
+
+function UI.renderWords()
+    for i = 1, 4 do
+        local on = i == S.wordsIndex
+        UI.wordFills[i].BackgroundColor3 = on and C.ACTIVE or C.INACTIVE
+        UI.wordLbls[i].TextColor3 = on and C.ACTIVE_TXT or C.INACTIVE_TXT
     end
-    watchContainer(playerGui:FindFirstChild("Notification"))
-    watchContainer(playerGui:FindFirstChild("Notifications"))
-    watchContainer(playerGui:FindFirstChild("Announcement"))
+    UI.progress.Text = #S.parts .. "/" .. getWordCount()
 end
-local function findCooldownMessage(since)
-    if rejectionCache.at <= (since or 0) then return nil end
-    if os.clock() - rejectionCache.at > 3 then return nil end
-    for _, pat in ipairs({
-        "base is full", "sold out", "out of stock", "already redeemed",
-        "already used", "code redeemed", "you have already",
-    }) do
-        if rejectionCache.text:find(pat, 1, true) then return pat end
+UI.renderWords()
+
+-- =========================================================================
+-- [8] SETTINGS PAGE
+-- =========================================================================
+do
+    local defs = {
+        {"Sounds", "soundsOn"}, {"Redeem 3 if 4 wrong", "redeem3On"}, {"Auto Type", "autoTypeOn"},
+        {"Spam on Listen", "spamOnListen"}, {"Word Mode", "wordMode"}, {"Ignore System", "ignoreSystem"},
+    }
+    for i, d in ipairs(defs) do
+        local row = makeRow(UI.tabs.Settings.page, (i - 1) * 76, d[1], 22)
+        local btn, fill, lbl = makeToggleButton(row, 476, "ON")
+        makeToggle(btn, fill, lbl, S[d[2]], function(v) S[d[2]] = v; cfgSet(d[2], v); saveConfig() end)
     end
 end
 
 -- =========================================================================
--- [12] ROOT GUI
+-- [9] FEED PAGE
 -- =========================================================================
-local v1 = Instance.new("ScreenGui")
-v1.Name = "ShoxCodeRedeemer"
-v1.ResetOnSpawn = false
-v1.IgnoreGuiInset = true
-v1.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-v1.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
-v1.DisplayOrder = 100
-
-local guiPosXScale  = cfgNum("guiXScale", 0.5)
-local guiPosXOffset = cfgNum("guiXOffset", 251)
-local guiPosYScale  = cfgNum("guiYScale", 0.5)
-local guiPosYOffset = cfgNum("guiYOffset", 60)
-
-local v3 = Instance.new("Frame")
-v3.Name = "ShoxWindow"
-v3.Active = true
-v3.AnchorPoint = Vector2.new(0.5, 0.5)
-v3.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-v3.BackgroundTransparency = 0.10
-v3.BorderSizePixel = 0
-v3.Position = UDim2.new(guiPosXScale, guiPosXOffset, guiPosYScale, guiPosYOffset)
-v3.Size = UDim2.new(0, 560, 0, 580)
-v3.ClipsDescendants = true
-v3.Parent = v1
-Instance.new("UICorner", v3).CornerRadius = UDim.new(0, 18)
-
-local FULL_HEIGHT = 580
-local MIN_HEIGHT  = 72
-local minimized   = false
-
-local ModeScale = Instance.new("UIScale")
-ModeScale.Scale = 0.44999998807907104
-ModeScale.Parent = v3
-
-local v4 = Instance.new("Frame")
-v4.Name = "Body"
-v4.BackgroundColor3 = C.BG_DARK
-v4.BackgroundTransparency = 0.35
-v4.BorderSizePixel = 0
-v4.Position = UDim2.new(0, 0, 0, 72)
-v4.Size = UDim2.new(1, 0, 1, -72)
-v4.Parent = v3
-Instance.new("UICorner", v4).CornerRadius = UDim.new(0, 18)
-
-local v5 = Instance.new("Frame")
-v5.Name = "Header"
-v5.Active = true
-v5.BackgroundTransparency = 1
-v5.ClipsDescendants = true
-v5.Size = UDim2.new(1, 0, 0, 72)
-v5.Parent = v3
-Instance.new("UICorner", v5).CornerRadius = UDim.new(0, 18)
-
-local headerBG = Instance.new("Frame")
-headerBG.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-headerBG.BackgroundTransparency = 0.15
-headerBG.BorderSizePixel = 0
-headerBG.Size = UDim2.new(1, 0, 1, 0)
-headerBG.Parent = v5
-Instance.new("UICorner", headerBG).CornerRadius = UDim.new(0, 18)
-
-local accentLine = Instance.new("Frame")
-accentLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-accentLine.BackgroundTransparency = 0.55
-accentLine.BorderSizePixel = 0
-accentLine.AnchorPoint = Vector2.new(0.5, 0.5)
-accentLine.Position = UDim2.new(0.5, 0, 0, 71)
-accentLine.Size = UDim2.new(1, -24, 0, 1)
-accentLine.Parent = v5
-
-local title = Instance.new("TextLabel")
-title.BackgroundTransparency = 1
-title.Size = UDim2.new(1, 0, 0, 44)
-title.ZIndex = 5
-title.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-title.Text = "Shox Code Redeemer"
-title.TextColor3 = C.TEXT
-title.TextSize = 34
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = v5
-Instance.new("UIStroke", {Thickness = 2, Color = C.STROKE_DARK, Parent = title})
-Instance.new("UIPadding", {PaddingLeft = UDim.new(0, 12), Parent = title})
-
-local subtitle = Instance.new("TextLabel")
-subtitle.BackgroundTransparency = 1
-subtitle.Position = UDim2.new(0, 0, 0, 42)
-subtitle.Size = UDim2.new(1, 0, 0, 22)
-subtitle.ZIndex = 5
-subtitle.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.ExtraBold)
-subtitle.Text = "discord.gg/EA7xS26mA9"
-subtitle.TextColor3 = C.TEXT_MUTED
-subtitle.TextSize = 16
-subtitle.TextXAlignment = Enum.TextXAlignment.Left
-subtitle.Parent = v5
-Instance.new("UIStroke", {Thickness = 2, Color = C.STROKE_DARK, Parent = subtitle})
-Instance.new("UIPadding", {PaddingLeft = UDim.new(0, 12), Parent = subtitle})
-
--- Minimize button
-local minBtn = Instance.new("TextButton")
-minBtn.AnchorPoint = Vector2.new(0.5, 0.5)
-minBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-minBtn.BorderSizePixel = 0
-minBtn.Position = UDim2.new(0, 528, 0, 30)
-minBtn.Size = UDim2.new(0, 44, 0, 44)
-minBtn.ZIndex = 6
-minBtn.AutoButtonColor = false
-minBtn.Text = ""
-minBtn.Parent = v5
-Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 10)
-local minFill = Instance.new("Frame")
-minFill.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-minFill.BorderSizePixel = 0
-minFill.Position = UDim2.new(0, 2, 0, 2)
-minFill.Size = UDim2.new(1, -4, 1, -4)
-minFill.Parent = minBtn
-Instance.new("UICorner", minFill).CornerRadius = UDim.new(0, 8)
-local minIcon = Instance.new("TextLabel")
-minIcon.BackgroundTransparency = 1
-minIcon.Size = UDim2.new(1, 0, 1, 0)
-minIcon.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-minIcon.Text = "−"
-minIcon.TextColor3 = C.TEXT
-minIcon.TextSize = 32
-minIcon.Parent = minBtn
-Instance.new("UIStroke", {Thickness = 2, Color = C.STROKE_DARK, Parent = minIcon})
-
-minBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    if minimized then
-        v4.Visible = false
-        minIcon.Text = "+"
-        TweenService:Create(v3, TweenInfo.new(0.22, Enum.EasingStyle.Quart), {Size = UDim2.new(0, 560, 0, MIN_HEIGHT)}):Play()
-    else
-        TweenService:Create(v3, TweenInfo.new(0.22, Enum.EasingStyle.Quart), {Size = UDim2.new(0, 560, 0, FULL_HEIGHT)}):Play()
-        task.delay(0.05, function() if not minimized then v4.Visible = true end end)
-        minIcon.Text = "−"
-    end
-end)
-
--- =========================================================================
--- [13] FACTORY HELPERS
--- =========================================================================
-local function makeTab(name, posX)
-    local btn = Instance.new("TextButton")
-    btn.AnchorPoint = Vector2.new(0.5, 0.5)
-    btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    btn.Position = UDim2.new(0, posX, 0, 111)
-    btn.Size = UDim2.new(0, 125, 0, 58)
-    btn.AutoButtonColor = false
-    btn.Text = ""
-    btn.Parent = v3
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 12)
-    local fill = Instance.new("Frame")
-    fill.BackgroundColor3 = C.INACTIVE
-    fill.BorderSizePixel = 0
-    fill.Position = UDim2.new(0, 1, 0, 1)
-    fill.Size = UDim2.new(1, -2, 1, -2)
-    fill.Parent = btn
-    Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 11)
-    local lbl = Instance.new("TextLabel")
-    lbl.BackgroundTransparency = 1
-    lbl.Size = UDim2.new(1, 0, 1, 0)
-    lbl.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-    lbl.Text = name
-    lbl.TextColor3 = C.INACTIVE_TXT
-    lbl.TextSize = 22
-    lbl.Parent = btn
-    Instance.new("UIStroke", {Thickness = 2, Color = C.STROKE_DARK, Parent = lbl})
-    return btn, fill, lbl
+local feedEntries, feedTotal = {}, 0
+do
+    local page = UI.tabs.Feed.page
+    UI.feedList = new("ScrollingFrame", {BackgroundColor3 = C.BG_DARK, BackgroundTransparency = 0.3, BorderSizePixel = 0,
+        Position = UDim2.new(0, 10, 0, 10), Size = UDim2.new(1, -20, 1, -70), ScrollBarThickness = 4,
+        ScrollBarImageColor3 = C.STROKE, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollingDirection = Enum.ScrollingDirection.Y}, page)
+    corner(UI.feedList, 12)
+    stroke(UI.feedList, 1.5, C.STROKE_DARK, true)
+    new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, UI.feedList)
+    new("UIPadding", {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
+        PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8)}, UI.feedList)
+    UI.feedCount = new("TextLabel", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1),
+        Position = UDim2.new(0.5, 0, 1, -6), Size = UDim2.new(1, -20, 0, 20), FontFace = FH,
+        Text = "0 caught", TextColor3 = C.TEXT_MUTED, TextSize = 14}, page)
 end
-
-local RedeemerTab, RedeemerFill, RedeemerLbl = makeTab("Redeemer", 75)
-local TraitTab, TraitFill, TraitLbl = makeTab("Trait Farm", 210)
-local SettingsTab, SettingsFill, SettingsLbl = makeTab("Settings", 345)
-local FeedTab, FeedFill, FeedLbl = makeTab("Feed", 480)
-
-local function makePage()
-    local page = Instance.new("Frame")
-    page.BackgroundTransparency = 1
-    page.Position = UDim2.new(0, 0, 0, 150)
-    page.Size = UDim2.new(1, 0, 1, -150)
-    page.Visible = false
-    page.Parent = v3
-    return page
-end
-local RedeemerPage = makePage()
-local SettingsPage = makePage()
-local TraitPage = makePage()
-local FeedPage = makePage()
-RedeemerPage.Visible = true
-
-local function makeRow(parent, y, titleText, textSize)
-    local row = Instance.new("Frame")
-    row.BackgroundColor3 = C.BG_ROW
-    row.BorderSizePixel = 0
-    row.Position = UDim2.new(0, 10, 0, y)
-    row.Size = UDim2.new(1, -20, 0, 68)
-    row.Parent = parent
-    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
-    local st = Instance.new("UIStroke"); st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    st.Color = C.STROKE_DARK; st.Thickness = 1.5; st.Transparency = 0.3; st.Parent = row
-    local lbl = Instance.new("TextLabel")
-    lbl.BackgroundTransparency = 1
-    lbl.Size = UDim2.new(1, 0, 1, 0)
-    lbl.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-    lbl.Text = titleText
-    lbl.TextColor3 = C.TEXT
-    lbl.TextSize = textSize or 26
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = row
-    Instance.new("UIStroke", {Thickness = 2, Color = C.STROKE_DARK, Parent = lbl})
-    Instance.new("UIPadding", {PaddingLeft = UDim.new(0, 16), Parent = lbl})
-    return row, lbl
-end
-
-local function makeToggleButton(parent, x, labelText, fillColor)
-    local btn = Instance.new("TextButton")
-    btn.AnchorPoint = Vector2.new(0.5, 0.5)
-    btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    btn.Position = UDim2.new(0, x, 0, 34)
-    btn.Size = UDim2.new(0, 100, 0, 46)
-    btn.AutoButtonColor = false
-    btn.Text = ""
-    btn.Parent = parent
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
-    local fill = Instance.new("Frame")
-    fill.BackgroundColor3 = fillColor
-    fill.BorderSizePixel = 0
-    fill.Position = UDim2.new(0, 1, 0, 1)
-    fill.Size = UDim2.new(1, -2, 1, -2)
-    fill.Parent = btn
-    Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 9)
-    local lbl = Instance.new("TextLabel")
-    lbl.BackgroundTransparency = 1
-    lbl.Size = UDim2.new(1, 0, 1, 0)
-    lbl.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-    lbl.Text = labelText
-    lbl.TextColor3 = C.TEXT
-    lbl.TextSize = 24
-    lbl.Parent = btn
-    Instance.new("UIStroke", {Thickness = 2, Color = C.STROKE_DARK, Parent = lbl})
-    return btn, fill, lbl
-end
-
-local function makeToggle(button, fill, label, initial, onChange)
-    local state = initial
-    local function render()
-        fill.BackgroundColor3 = state and C.ON or C.OFF
-        label.TextColor3 = state and C.TEXT_ON or C.TEXT
-        label.Text = state and "ON" or "OFF"
-    end
-    render()
-    button.MouseButton1Click:Connect(function()
-        state = not state; render()
-        if onChange then pcall(onChange, state) end
-    end)
-    return function() return state end
-end
-
--- =========================================================================
--- [14] REDEEMER PAGE
--- =========================================================================
-local RedRow1 = makeRow(RedeemerPage, 0, "Words")
-local WordsButtons, WordsFills, WordsLbls = {}, {}, {}
-for i = 1, 4 do
-    local x = 277 + (i - 1) * 68
-    local btn = Instance.new("TextButton")
-    btn.AnchorPoint = Vector2.new(0.5, 0.5)
-    btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    btn.Position = UDim2.new(0, x, 0, 34)
-    btn.Size = UDim2.new(0, 60, 0, 46)
-    btn.AutoButtonColor = false
-    btn.Text = ""
-    btn.Parent = RedRow1
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
-    local fill = Instance.new("Frame")
-    fill.BackgroundColor3 = C.INACTIVE
-    fill.BorderSizePixel = 0
-    fill.Position = UDim2.new(0, 1, 0, 1)
-    fill.Size = UDim2.new(1, -2, 1, -2)
-    fill.Parent = btn
-    Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 9)
-    local lbl = Instance.new("TextLabel")
-    lbl.BackgroundTransparency = 1
-    lbl.Size = UDim2.new(1, 0, 1, 0)
-    lbl.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-    lbl.Text = tostring(i)
-    lbl.TextColor3 = C.INACTIVE_TXT
-    lbl.TextSize = 28
-    lbl.Parent = btn
-    Instance.new("UIStroke", {Thickness = 2, Color = C.STROKE_DARK, Parent = lbl})
-    WordsButtons[i] = btn; WordsFills[i] = fill; WordsLbls[i] = lbl
-end
-
-local RedRow2, RedeemerStatusLabel = makeRow(RedeemerPage, 76, "Redeemer: Disabled")
-RedeemerStatusLabel.TextColor3 = C.TEXT_MUTED
-
-local StartStopBtn = Instance.new("TextButton")
-StartStopBtn.AnchorPoint = Vector2.new(0.5, 0.5)
-StartStopBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-StartStopBtn.Position = UDim2.new(0, 446, 0, 34)
-StartStopBtn.Size = UDim2.new(0, 160, 0, 46)
-StartStopBtn.AutoButtonColor = false
-StartStopBtn.Text = ""
-StartStopBtn.Parent = RedRow2
-Instance.new("UICorner", StartStopBtn).CornerRadius = UDim.new(0, 10)
-local StartStopFill = Instance.new("Frame")
-StartStopFill.BackgroundColor3 = C.OFF
-StartStopFill.BorderSizePixel = 0
-StartStopFill.Position = UDim2.new(0, 1, 0, 1)
-StartStopFill.Size = UDim2.new(1, -2, 1, -2)
-StartStopFill.Parent = StartStopBtn
-Instance.new("UICorner", StartStopFill).CornerRadius = UDim.new(0, 9)
-local StartStopLabel = Instance.new("TextLabel")
-StartStopLabel.BackgroundTransparency = 1
-StartStopLabel.Size = UDim2.new(1, 0, 1, 0)
-StartStopLabel.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-StartStopLabel.Text = "OFF [F]"
-StartStopLabel.TextColor3 = C.TEXT
-StartStopLabel.TextSize = 20
-StartStopLabel.Parent = StartStopBtn
-Instance.new("UIStroke", {Thickness = 2, Color = C.STROKE_DARK, Parent = StartStopLabel})
-
-local ProgressRow, ProgressLabel = makeRow(RedeemerPage, 152, "0/" .. tostring(getWordCount()))
-
-local RedRow4 = makeRow(RedeemerPage, 228, "Auto Detect")
-local AutoDetectBtn, AutoDetectFill, AutoDetectLabel = makeToggleButton(RedRow4, 476, "ON", C.INACTIVE)
-
-local CodeDisplay = Instance.new("Frame")
-CodeDisplay.BackgroundColor3 = C.BG_CARD
-CodeDisplay.BorderSizePixel = 0
-CodeDisplay.Position = UDim2.new(0, 10, 0, 304)
-CodeDisplay.Size = UDim2.new(1, -20, 0, 50)
-CodeDisplay.Parent = RedeemerPage
-Instance.new("UICorner", CodeDisplay).CornerRadius = UDim.new(0, 12)
-Instance.new("UIStroke", {ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Color = C.STROKE, Thickness = 2, Parent = CodeDisplay})
-local CodeDisplayLabel = Instance.new("TextLabel")
-CodeDisplayLabel.BackgroundTransparency = 1
-CodeDisplayLabel.Size = UDim2.new(1, 0, 1, 0)
-CodeDisplayLabel.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-CodeDisplayLabel.Text = "Code Will Show Here"
-CodeDisplayLabel.TextColor3 = C.TEXT
-CodeDisplayLabel.TextSize = 28
-CodeDisplayLabel.Parent = CodeDisplay
-Instance.new("UIStroke", {Thickness = 2, Color = C.STROKE_DARK, Parent = CodeDisplayLabel})
-
--- Spam mode row
-local SpamRow, SpamLabel = makeRow(RedeemerPage, 380, "Spam Mode", 22)
-local SpamBtn, SpamFill, SpamLbl = makeToggleButton(SpamRow, 476, "OFF", C.INACTIVE)
--- Event block row
-local EvtRow, EvtLabel = makeRow(RedeemerPage, 456, "Event Block", 22)
-local EvtBtn, EvtFill, EvtLbl = makeToggleButton(EvtRow, 476, "OFF", C.INACTIVE)
-
--- =========================================================================
--- [15] SETTINGS PAGE
--- =========================================================================
-local SetRow1 = makeRow(SettingsPage, 0, "Sounds", 22)
-local SoundsBtn, SoundsFill, SoundsLabel = makeToggleButton(SetRow1, 476, "ON", C.INACTIVE)
-local SetRow2 = makeRow(SettingsPage, 76, "Redeem 3 if 4 wrong", 22)
-local Redeem3Btn, Redeem3Fill, Redeem3Label = makeToggleButton(SetRow2, 476, "ON", C.INACTIVE)
-local SetRow3 = makeRow(SettingsPage, 152, "Auto Type", 22)
-local AutoTypeBtn, AutoTypeFill, AutoTypeLabel = makeToggleButton(SetRow3, 476, "ON", C.INACTIVE)
-local SetRow4 = makeRow(SettingsPage, 228, "Spam on Listen", 22)
-local SpamOnBtn, SpamOnFill, SpamOnLabel = makeToggleButton(SetRow4, 476, "OFF", C.INACTIVE)
-local SetRow5 = makeRow(SettingsPage, 304, "Word Mode", 22)
-local WordModeBtn, WordModeFill, WordModeLabel = makeToggleButton(SetRow5, 476, "OFF", C.INACTIVE)
-local SetRow6 = makeRow(SettingsPage, 380, "Ignore System", 22)
-local SysBtn, SysFill, SysLabel = makeToggleButton(SetRow6, 476, "ON", C.INACTIVE)
-local SetRow7 = makeRow(SettingsPage, 456, "Duo Mode", 22)
-local DuoBtn, DuoFill, DuoLabel = makeToggleButton(SetRow7, 476, "OFF", C.INACTIVE)
-
--- =========================================================================
--- [16] TRAIT FARM PAGE
--- =========================================================================
-local TF1 = makeRow(TraitPage, 0, "Auto Buy")
-local TF1Btn, TF1Fill, TF1Lbl = makeToggleButton(TF1, 476, "OFF", C.INACTIVE)
-local TF2 = makeRow(TraitPage, 76, "Anchor")
-local TF2Btn, TF2Fill, TF2Lbl = makeToggleButton(TF2, 476, "OFF", C.INACTIVE)
-local TF3 = makeRow(TraitPage, 152, "Anti Ragdoll")
-local TF3Btn, TF3Fill, TF3Lbl = makeToggleButton(TF3, 476, "OFF", C.INACTIVE)
-local TF4 = makeRow(TraitPage, 228, "FPS Boost")
-local TF4Btn, TF4Fill, TF4Lbl = makeToggleButton(TF4, 476, "OFF", C.INACTIVE)
-local TF5 = makeRow(TraitPage, 304, "Anti Lag")
-local TF5Btn, TF5Fill, TF5Lbl = makeToggleButton(TF5, 476, "OFF", C.INACTIVE)
-
--- =========================================================================
--- [17] FEED PAGE
--- =========================================================================
-local feedList = Instance.new("ScrollingFrame")
-feedList.BackgroundColor3 = C.BG_DARK
-feedList.BackgroundTransparency = 0.3
-feedList.BorderSizePixel = 0
-feedList.Position = UDim2.new(0, 10, 0, 10)
-feedList.Size = UDim2.new(1, -20, 1, -70)
-feedList.ScrollBarThickness = 4
-feedList.ScrollBarImageColor3 = C.STROKE
-feedList.CanvasSize = UDim2.new()
-feedList.AutomaticCanvasSize = Enum.AutomaticSize.Y
-feedList.ScrollingDirection = Enum.ScrollingDirection.Y
-feedList.Parent = FeedPage
-Instance.new("UICorner", feedList).CornerRadius = UDim.new(0, 12)
-Instance.new("UIStroke", {Color = C.STROKE_DARK, Thickness = 1.5, Parent = feedList})
-Instance.new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = feedList})
-Instance.new("UIPadding", {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
-    PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8), Parent = feedList})
-
-local feedEmpty = Instance.new("TextLabel")
-feedEmpty.BackgroundTransparency = 1
-feedEmpty.Size = UDim2.new(1, 0, 0, 40)
-feedEmpty.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Medium)
-feedEmpty.Text = "Feed is empty — listening for codes..."
-feedEmpty.TextColor3 = C.TEXT_MUTED
-feedEmpty.TextSize = 14
-feedEmpty.Parent = feedList
-
-local feedCountLabel = Instance.new("TextLabel")
-feedCountLabel.BackgroundTransparency = 1
-feedCountLabel.AnchorPoint = Vector2.new(0.5, 1)
-feedCountLabel.Position = UDim2.new(0.5, 0, 1, -6)
-feedCountLabel.Size = UDim2.new(1, -20, 0, 20)
-feedCountLabel.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-feedCountLabel.Text = "0 caught"
-feedCountLabel.TextColor3 = C.TEXT_MUTED
-feedCountLabel.TextSize = 14
-feedCountLabel.Parent = FeedPage
-
-local feedEntries = {}
-local feedTotal = 0
 
 local function feedAdd(text, code)
-    if feedEmpty then feedEmpty:Destroy(); feedEmpty = nil end
     feedTotal = feedTotal + 1
-    feedCountLabel.Text = feedTotal .. " caught"
-
-    local card = Instance.new("Frame")
-    card.Size = UDim2.new(1, -4, 0, 0)
-    card.AutomaticSize = Enum.AutomaticSize.Y
-    card.BackgroundColor3 = C.BG_ROW
-    card.BorderSizePixel = 0
-    card.LayoutOrder = -feedTotal
-    card.Parent = feedList
-    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
-    Instance.new("UIStroke", {Color = code and C.STROKE or C.STROKE_DARK, Thickness = 1, Parent = card})
-    Instance.new("UIPadding", {PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
-        PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = card})
-    Instance.new("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = card})
-
-    local header = Instance.new("Frame")
-    header.Size = UDim2.new(1, 0, 0, 12)
-    header.BackgroundTransparency = 1
-    header.LayoutOrder = 1
-    header.Parent = card
-    local dot = Instance.new("Frame")
-    dot.Size = UDim2.fromOffset(6, 6)
-    dot.Position = UDim2.new(0, 0, 0.5, -3)
-    dot.BackgroundColor3 = code and C.ACTIVE or C.STROKE
-    dot.BorderSizePixel = 0
-    dot.Parent = header
-    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-    local tag = Instance.new("TextLabel")
-    tag.BackgroundTransparency = 1
-    tag.Position = UDim2.fromOffset(12, 0)
-    tag.Size = UDim2.new(0, 60, 1, 0)
-    tag.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-    tag.Text = "CODE"
-    tag.TextColor3 = C.ACTIVE
-    tag.TextSize = 9
-    tag.TextXAlignment = Enum.TextXAlignment.Left
-    tag.Parent = header
-    local stamp = Instance.new("TextLabel")
-    stamp.BackgroundTransparency = 1
-    stamp.Position = UDim2.new(1, -70, 0, 0)
-    stamp.Size = UDim2.new(0, 70, 1, 0)
-    stamp.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Medium)
-    stamp.Text = os.date("%H:%M:%S")
-    stamp.TextColor3 = C.TEXT_MUTED
-    stamp.TextSize = 9
-    stamp.TextXAlignment = Enum.TextXAlignment.Right
-    stamp.Parent = header
-
-    local body = Instance.new("TextLabel")
-    body.BackgroundTransparency = 1
-    body.Size = UDim2.new(1, 0, 0, 0)
-    body.AutomaticSize = Enum.AutomaticSize.Y
-    body.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Medium)
-    body.Text = text
-    body.TextColor3 = C.TEXT
-    body.TextSize = 11
-    body.TextWrapped = true
-    body.TextXAlignment = Enum.TextXAlignment.Left
-    body.LayoutOrder = 2
-    body.Parent = card
-
+    UI.feedCount.Text = feedTotal .. " caught"
+    local card = new("Frame", {Size = UDim2.new(1, -4, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundColor3 = C.BG_ROW, BorderSizePixel = 0, LayoutOrder = -feedTotal}, UI.feedList)
+    corner(card, 10)
+    stroke(card, 1, code and C.STROKE or C.STROKE_DARK, true)
+    new("UIPadding", {PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
+        PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10)}, card)
+    new("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}, card)
+    new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        FontFace = FM, Text = text, TextColor3 = C.TEXT, TextSize = 11, TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 1}, card)
     if code then
-        local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 24)
-        row.BackgroundTransparency = 1
-        row.LayoutOrder = 3
-        row.Parent = card
-
-        local codeLbl = Instance.new("TextLabel")
-        codeLbl.Size = UDim2.new(0.5, -3, 1, 0)
-        codeLbl.BackgroundColor3 = C.BG_INPUT
-        codeLbl.BorderSizePixel = 0
-        codeLbl.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-        codeLbl.Text = code
-        codeLbl.TextColor3 = C.ACTIVE
-        codeLbl.TextSize = 12
-        codeLbl.Parent = row
-        Instance.new("UICorner", codeLbl).CornerRadius = UDim.new(0, 6)
-        Instance.new("UIStroke", {Color = C.STROKE, Thickness = 1, Parent = codeLbl})
-
-        local copyBtn = Instance.new("TextButton")
-        copyBtn.Size = UDim2.new(0.22, -3, 1, 0)
-        copyBtn.Position = UDim2.new(0.52, 3, 0, 0)
-        copyBtn.BackgroundColor3 = C.BG_INPUT
-        copyBtn.BorderSizePixel = 0
-        copyBtn.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-        copyBtn.Text = "COPY"
-        copyBtn.TextColor3 = C.TEXT
-        copyBtn.TextSize = 10
-        copyBtn.Parent = row
-        Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 6)
-        copyBtn.MouseButton1Click:Connect(function()
-            if writeClipboard then copyBtn.Text = pcall(writeClipboard, code) and "OK" or "ERR"
-            else copyBtn.Text = "N/A" end
-            task.delay(0.7, function() if copyBtn.Parent then copyBtn.Text = "COPY" end end)
-        end)
-
-        local useBtn = Instance.new("TextButton")
-        useBtn.Size = UDim2.new(0.26, -3, 1, 0)
-        useBtn.Position = UDim2.new(0.74, 3, 0, 0)
-        useBtn.BackgroundColor3 = C.ACTIVE
-        useBtn.BorderSizePixel = 0
-        useBtn.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-        useBtn.Text = "USE"
-        useBtn.TextColor3 = C.TEXT_ON
-        useBtn.TextSize = 10
-        useBtn.Parent = row
-        Instance.new("UICorner", useBtn).CornerRadius = UDim.new(0, 6)
-        useBtn.MouseButton1Click:Connect(function()
-            useBtn.Text = "..."
-            if _G.__ShoxUse then pcall(_G.__ShoxUse, code) end
-            useBtn.Text = "USE"
-        end)
+        local codeRow = new("Frame", {Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1, LayoutOrder = 2}, card)
+        local codeLbl = new("TextLabel", {Size = UDim2.new(0.7, -3, 1, 0), BackgroundColor3 = C.BG_INPUT, Text = code,
+            TextColor3 = C.ACTIVE, FontFace = FH, TextSize = 14}, codeRow)
+        corner(codeLbl, 6)
+        local useBtn = new("TextButton", {Size = UDim2.new(0.3, -3, 1, 0), Position = UDim2.new(0.7, 3, 0, 0),
+            BackgroundColor3 = C.ACTIVE, Text = "USE", TextColor3 = C.TEXT_ON, FontFace = FH, TextSize = 14}, codeRow)
+        corner(useBtn, 6)
+        useBtn.MouseButton1Click:Connect(function() task.spawn(submitCodeAdvanced, code) end)
     end
-
     feedEntries[#feedEntries + 1] = card
     if #feedEntries > 36 then
-        local old = table.remove(feedEntries, 1)
-        if old then old:Destroy() end
+        local oldest = table.remove(feedEntries, 1)
+        if oldest then oldest:Destroy() end
     end
 end
 
 -- =========================================================================
--- [18] TAB SWITCHING
--- =========================================================================
-local function selectTab(which)
-    RedeemerPage.Visible = false; SettingsPage.Visible = false
-    TraitPage.Visible = false; FeedPage.Visible = false
-    RedeemerFill.BackgroundColor3 = C.INACTIVE; TraitFill.BackgroundColor3 = C.INACTIVE
-    SettingsFill.BackgroundColor3 = C.INACTIVE; FeedFill.BackgroundColor3 = C.INACTIVE
-    RedeemerLbl.TextColor3 = C.INACTIVE_TXT; TraitLbl.TextColor3 = C.INACTIVE_TXT
-    SettingsLbl.TextColor3 = C.INACTIVE_TXT; FeedLbl.TextColor3 = C.INACTIVE_TXT
-    if which == "Redeemer" then
-        RedeemerPage.Visible = true
-        RedeemerFill.BackgroundColor3 = C.ACTIVE; RedeemerLbl.TextColor3 = C.ACTIVE_TXT
-    elseif which == "TraitFarm" then
-        TraitPage.Visible = true
-        TraitFill.BackgroundColor3 = C.ACTIVE; TraitLbl.TextColor3 = C.ACTIVE_TXT
-    elseif which == "Settings" then
-        SettingsPage.Visible = true
-        SettingsFill.BackgroundColor3 = C.ACTIVE; SettingsLbl.TextColor3 = C.ACTIVE_TXT
-    elseif which == "Feed" then
-        FeedPage.Visible = true
-        FeedFill.BackgroundColor3 = C.ACTIVE; FeedLbl.TextColor3 = C.ACTIVE_TXT
-    end
-end
-RedeemerTab.MouseButton1Click:Connect(function() selectTab("Redeemer") end)
-TraitTab.MouseButton1Click:Connect(function() selectTab("TraitFarm") end)
-SettingsTab.MouseButton1Click:Connect(function() selectTab("Settings") end)
-FeedTab.MouseButton1Click:Connect(function() selectTab("Feed") end)
-selectTab("Redeemer")
-
--- =========================================================================
--- [19] WORD SELECTION
--- =========================================================================
-local function renderWords()
-    for i = 1, 4 do
-        if i == wordsIndex then
-            WordsFills[i].BackgroundColor3 = C.ACTIVE; WordsLbls[i].TextColor3 = C.ACTIVE_TXT
-        else
-            WordsFills[i].BackgroundColor3 = C.INACTIVE; WordsLbls[i].TextColor3 = C.INACTIVE_TXT
-        end
-    end
-    ProgressLabel.Text = tostring(#_capturedParts) .. "/" .. tostring(getWordCount())
-end
-renderWords()
-for i = 1, 4 do
-    WordsButtons[i].MouseButton1Click:Connect(function()
-        wordsIndex = i; cfgSet("wordsIndex", i); saveConfig(); renderWords()
-    end)
-end
-
--- =========================================================================
--- [20] HUD HOLDER + DRAG
--- =========================================================================
-local HudHolder = Instance.new("Frame")
-HudHolder.AnchorPoint = Vector2.new(0.5, 0.5)
-HudHolder.BackgroundTransparency = 1
-HudHolder.Position = UDim2.new(0, 1061, 0, 222)
-HudHolder.Size = UDim2.new(0, 89, 0, 89)
-HudHolder.ZIndex = 10
-HudHolder.Parent = v1
-Instance.new("UIScale", {Scale = 0.5, Parent = HudHolder})
-
-local ToggleButton = Instance.new("TextButton")
-ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
-ToggleButton.BackgroundTransparency = 1
-ToggleButton.Position = UDim2.new(0.5, 0, 0.5, 0)
-ToggleButton.Size = UDim2.new(0, 89, 0, 89)
-ToggleButton.AutoButtonColor = false
-ToggleButton.Text = ""
-ToggleButton.Parent = HudHolder
-Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(1, 0)
-
-local Edge = Instance.new("Frame")
-Edge.BackgroundTransparency = 1
-Edge.Position = UDim2.new(0, 2, 0, 2)
-Edge.Size = UDim2.new(1, -4, 1, -4)
-Edge.Parent = ToggleButton
-Instance.new("UICorner", Edge).CornerRadius = UDim.new(1, 0)
-Instance.new("UIStroke", {ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Color = C.STROKE, Thickness = 2, Parent = Edge})
-
-local Face = Instance.new("Frame")
-Face.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-Face.BorderSizePixel = 0
-Face.ClipsDescendants = true
-Face.Position = UDim2.new(0, 4, 0, 4)
-Face.Size = UDim2.new(1, -8, 1, -8)
-Face.Parent = ToggleButton
-Instance.new("UICorner", Face).CornerRadius = UDim.new(1, 0)
-
-local HLetter = Instance.new("TextLabel")
-HLetter.BackgroundTransparency = 1
-HLetter.Size = UDim2.new(1, 0, 1, 0)
-HLetter.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Heavy)
-HLetter.Text = "S"
-HLetter.TextColor3 = Color3.fromRGB(255, 255, 255)
-HLetter.TextSize = 56
-HLetter.Parent = Face
-
-local HLbl = Instance.new("TextLabel")
-HLbl.AnchorPoint = Vector2.new(0.5, 0.5)
-HLbl.BackgroundTransparency = 1
-HLbl.Position = UDim2.new(0.5, 0, 0, 83)
-HLbl.Size = UDim2.new(1, 20, 0, 26)
-HLbl.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.ExtraBold)
-HLbl.Text = "Shox"
-HLbl.TextColor3 = C.TEXT
-HLbl.TextSize = 22
-HLbl.Parent = ToggleButton
-Instance.new("UIStroke", {Thickness = 2, Color = C.STROKE_DARK, Parent = HLbl})
-
-local guiVisible = true
-ToggleButton.MouseButton1Click:Connect(function()
-    guiVisible = not guiVisible
-    v3.Visible = guiVisible
-end)
-
-local dragging, dragStart, startPos
-v5.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true; dragStart = input.Position; startPos = v3.Position
-        local c
-        c = input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-                if c then c:Disconnect() end
-                cfgSet("guiXScale", v3.Position.X.Scale); cfgSet("guiXOffset", v3.Position.X.Offset)
-                cfgSet("guiYScale", v3.Position.Y.Scale); cfgSet("guiYOffset", v3.Position.Y.Offset)
-                saveConfig()
-            end
-        end)
-    end
-end)
-UIS.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local d = input.Position - dragStart
-        v3.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
-    end
-end)
-
--- =========================================================================
--- [21] PIPELINE
+-- [10] PIPELINE
 -- =========================================================================
 local function setStatus(msg, kind)
-    RedeemerStatusLabel.Text = "Redeemer: " .. tostring(msg or "")
-    RedeemerStatusLabel.TextColor3 = (kind == "ok") and C.TEXT or C.TEXT_MUTED
+    UI.status.Text = "Redeemer: " .. tostring(msg or "")
+    UI.status.TextColor3 = (kind == "ok") and C.TEXT or C.TEXT_MUTED
 end
 
-local _setRunning_ref
+local function setRunning(value)
+    S.running = value
+    if value then
+        UI.startFill.BackgroundColor3 = C.ON
+        UI.startLbl.TextColor3 = C.TEXT_ON
+        UI.startLbl.Text = "ON [F]"
+        setStatus("Enabled", "ok")
+        UI.progress.Text = #S.parts .. "/" .. getWordCount()
+    else
+        UI.startFill.BackgroundColor3 = C.OFF
+        UI.startLbl.TextColor3 = C.TEXT
+        UI.startLbl.Text = "OFF [F]"
+        setStatus("Disabled", nil)
+        S.parts = {}
+        UI.progress.Text = "0/" .. getWordCount()
+    end
+end
 
 local function submitCapturedCode(code)
     if not code or code == "" then return end
-    if _seen[code] then return end
-    if _submitting then return end
-    _seen[code] = true
-    task.delay(2, function() _seen[code] = nil end)
-    _submitting = true
-    _redeemStatus = "redeeming"
-    _redeemPendingCode = code; _redeemOriginalCode = code; _redeemStartTime = os.clock()
-    CodeDisplayLabel.Text = "Redeeming..."
+    if S.seen[code] or S.submitting then return end
+    S.seen[code] = true
+    task.delay(2, function() S.seen[code] = nil end)
+    S.submitting = true
+    S.lastCode = code
+    S.stamp = os.clock()
+    local stamp = S.stamp
+    UI.codeLabel.Text = "Redeeming..."
     setStatus("redeeming: " .. code, "busy")
-    local ok, res = submitCodeAdvanced(code)
-    _submitting = false
-    if ok then setStatus("sent: " .. code, "ok")
-    else setStatus("failed: " .. code, "err") end
-    running = false
-    if _setRunning_ref then _setRunning_ref(false) end
-    task.spawn(function()
-        local startTime = _redeemStartTime
-        task.wait(3)
-        if _redeemStatus == "redeeming" and _redeemStartTime == startTime then
-            CodeDisplayLabel.Text = "Code Will Show Here"
-            _redeemStatus = nil; _redeemPendingCode = nil; _redeemOriginalCode = nil
-        end
+    local ok = submitCodeAdvanced(code)
+    S.submitting = false
+    setRunning(false)
+    if ok then setStatus("sent: " .. code, "ok") else setStatus("failed: " .. code, "err") end
+    feedAdd(ok and "Code sent" or "Code failed", code)
+    task.delay(3, function()
+        if S.stamp == stamp then UI.codeLabel.Text = "Code Will Show Here" end
     end)
 end
 
-_G.__ShoxUse = function(code)
-    setCodeBoxText(code)
-    if autoTypeOn then CodeDisplayLabel.Text = code end
-    submitCapturedCode(code)
-end
-
 local function captureWord(word)
-    if not word or word == "" then return end
-    _capturedParts[#_capturedParts + 1] = word
-    ProgressLabel.Text = tostring(#_capturedParts) .. "/" .. tostring(getWordCount())
-    CodeDisplayLabel.Text = table.concat(_capturedParts)
-    if #_capturedParts >= getWordCount() then
-        local code = table.concat(_capturedParts)
-        _capturedParts = {}
+    if not word or word == "" or not S.running then return end
+    S.parts[#S.parts + 1] = word
+    UI.progress.Text = #S.parts .. "/" .. getWordCount()
+    UI.codeLabel.Text = table.concat(S.parts)
+    if #S.parts >= getWordCount() then
+        local code = table.concat(S.parts)
+        S.parts = {}
         submitCapturedCode(code)
     end
 end
 
 local function detectTrigger(text)
     local lower = text:lower()
-    for _, trig in ipairs(TRIGGERS) do
-        local s, e = lower:find(trig, 1, true)
-        if s then return true, text:sub(e + 1) end
+    for _, trig in ipairs({"use code", "code is", "code:", "use:", "redeem code"}) do
+        local _, e = lower:find(trig, 1, true)
+        if e then return true, text:sub(e + 1) end
     end
     return false, text
 end
 
-local function checkRedeemResponse(text)
-    if _redeemStatus ~= "redeeming" then return false end
-    local lower = text:lower()
-    for _, p in ipairs(SUCCESS_PATTERNS) do
-        if lower:find(p, 1, true) then
-            _redeemStatus = "success"
-            CodeDisplayLabel.Text = "Success Redeem!"
-            _redeemPendingCode = nil; _redeemOriginalCode = nil
-            return true
-        end
-    end
-    for _, p in ipairs(FAIL_PATTERNS) do
-        if lower:find(p, 1, true) then
-            _redeemStatus = "failed"
-            CodeDisplayLabel.Text = "Failed " .. (_redeemOriginalCode or _redeemPendingCode or "")
-            _redeemPendingCode = nil; _redeemOriginalCode = nil
-            return true
-        end
-    end
-    return false
-end
-
-local function setRunning(value)
-    running = value
-    if running then
-        StartStopFill.BackgroundColor3 = C.ON
-        StartStopLabel.TextColor3 = C.TEXT_ON
-        StartStopLabel.Text = "ON [F]"
-        setStatus("Enabled", "ok")
-        ProgressLabel.Text = tostring(#_capturedParts) .. "/" .. tostring(getWordCount())
-    else
-        StartStopFill.BackgroundColor3 = C.OFF
-        StartStopLabel.TextColor3 = C.TEXT
-        StartStopLabel.Text = "OFF [F]"
-        setStatus("Disabled", nil)
-        _capturedParts = {}
-        ProgressLabel.Text = "0/" .. tostring(getWordCount())
-        if _isSpamming then _isSpamming = false end
-    end
-end
-_setRunning_ref = setRunning
-
 local function processText(text)
-    if not text or text == "" then return end
-    if checkRedeemResponse(text) then return end
-    if isSystemPhrase(text) then return end
-    -- Riddle classifier: don't submit riddles as codes
-    local kind = classifyDrop(text)
-    if kind == "riddle" and duoMode then
+    local lower = text:lower()
+    if lower:find("?", 1, true) or lower:find("riddle", 1, true) then
         feedAdd(text, nil)
         return
     end
     local triggered, remainder = detectTrigger(text)
-    if autoOn and triggered and not running then _setRunning_ref(true) end
     if triggered then
-        _redeemStatus = nil; _redeemPendingCode = nil; _redeemOriginalCode = nil
-        if _lastBox then pcall(function() _lastBox.Text = "" end) end
-        _capturedParts = {}
-        CodeDisplayLabel.Text = ""
+        if not S.running then
+            if not S.autoOn then feedAdd(text, nil); return end
+            setRunning(true)
+        end
+        S.parts = {}
+        UI.codeLabel.Text = ""
         for word in remainder:gmatch("[%w_]+") do captureWord(word) end
-    else
-        if not running then
-            if kind == "code" and autoOn then _setRunning_ref(true)
-            else feedAdd(text, nil); return end
-        end
+    elseif S.running then
         for word in text:gmatch("[%w_]+") do captureWord(word) end
-    end
-    local candidate
-    for word in text:gmatch("[%w_]+") do
-        if #word >= 4 and (word:match("%u") or word:match("%d")) then candidate = word end
-    end
-    if triggered then feedAdd(text, candidate) end
-end
-
--- =========================================================================
--- [22] ANTI-RAGDOLL (Physics, from Traced)
--- =========================================================================
-local antiRagdoll = {Enabled = false, Connections = {}, Welds = {}, JumpPauseUntil = 0, JumpPauseDuration = 0.6}
-local function getRig()
-    local char = player.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    local root = char:FindFirstChild("HumanoidRootPart")
-    local anim = hum and hum:FindFirstChildOfClass("Animator")
-    if hum and root and anim then return char, hum, root, anim end
-end
-local function isJumping(h)
-    if tick() < antiRagdoll.JumpPauseUntil then return true end
-    if h then
-        local st = h:GetState()
-        if st == Enum.HumanoidStateType.Jumping or st == Enum.HumanoidStateType.Freefall then return true end
-    end
-    return false
-end
-local function setStates(h, enabled)
-    pcall(function()
-        h:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, enabled)
-        h:SetStateEnabled(Enum.HumanoidStateType.Physics, enabled)
-        h:SetStateEnabled(Enum.HumanoidStateType.FallingDown, enabled)
-        h:SetStateEnabled(Enum.HumanoidStateType.PlatformStanding, enabled)
-    end)
-end
-local function enableAntiRagdoll()
-    if antiRagdoll.Enabled then return end
-    antiRagdoll.Enabled = true
-    local char, h, root = getRig()
-    if not char then antiRagdoll.Enabled = false; return end
-    setStates(h, false)
-    pcall(function()
-        h.PlatformStand = false; h.Sit = false; h.AutoRotate = true
-    end)
-    for _, d in ipairs(char:GetDescendants()) do
-        if d:IsA("BasePart") and d ~= root then
-            local w = Instance.new("WeldConstraint")
-            w.Name = "AntiRagdollWeld"; w.Part0 = root; w.Part1 = d; w.Parent = root
-            table.insert(antiRagdoll.Welds, w)
-        end
-    end
-    table.insert(antiRagdoll.Connections, RunService.Stepped:Connect(function()
-        if not antiRagdoll.Enabled then return end
-        local _, h2, r2 = getRig()
-        if h2 and r2 and not isJumping(h2) then
-            r2.AssemblyAngularVelocity = Vector3.zero
-        end
-    end))
-    table.insert(antiRagdoll.Connections, RunService.Heartbeat:Connect(function()
-        if not antiRagdoll.Enabled then return end
-        local c, h2, r2 = getRig()
-        if not c or h2.Health <= 0 then return end
-        setStates(h2, false)
-        local st = h2:GetState()
-        local bad = st == Enum.HumanoidStateType.Ragdoll
-                 or st == Enum.HumanoidStateType.Physics
-                 or st == Enum.HumanoidStateType.FallingDown
-                 or st == Enum.HumanoidStateType.PlatformStanding
-        if bad or r2.CFrame.UpVector.Y < 0.85 then
-            pcall(function()
-                h2.PlatformStand = false; h2.Sit = false
-                local dir = Vector3.new(r2.CFrame.LookVector.X, 0, r2.CFrame.LookVector.Z)
-                if dir.Magnitude > 0.05 then
-                    r2.CFrame = r2.CFrame:Lerp(CFrame.lookAt(r2.Position, r2.Position + dir.Unit), 1)
-                end
-                h2:ChangeState(Enum.HumanoidStateType.GettingUp)
-                task.defer(function() if h2.Parent and h2.Health > 0 then h2:ChangeState(Enum.HumanoidStateType.Running) end end)
-            end)
-        end
-    end))
-    table.insert(antiRagdoll.Connections, UIS.JumpRequest:Connect(function()
-        antiRagdoll.JumpPauseUntil = tick() + antiRagdoll.JumpPauseDuration
-    end))
-end
-local function disableAntiRagdoll()
-    antiRagdoll.Enabled = false
-    for _, c in ipairs(antiRagdoll.Connections) do pcall(function() c:Disconnect() end) end
-    antiRagdoll.Connections = {}
-    for _, w in ipairs(antiRagdoll.Welds) do pcall(function() w:Destroy() end) end
-    antiRagdoll.Welds = {}
-    local _, h = getRig()
-    if h then setStates(h, true) end
-end
-
--- =========================================================================
--- [23] AUTO BUY (from Traced)
--- =========================================================================
-local autoBuyPrompts = {}
-local autoBuyAccum = 0
-local autoBuyLastFired, autoBuyLastFiredTime = nil, 0
-local function isBuyPrompt(prompt)
-    if not prompt then return false end
-    local text = (tostring(prompt.Name) .. " " .. tostring(prompt.ActionText) .. " " .. tostring(prompt.ObjectText)):lower()
-    for _, kw in ipairs({"buy", "purchase", "claim", "steal", "collect"}) do
-        if text:find(kw, 1, true) then return true end
-    end
-    return false
-end
-local function getPromptPos(prompt)
-    if not prompt then return nil end
-    local p = prompt.Parent
-    if not p then return nil end
-    if p:IsA("Attachment") then return p.WorldPosition end
-    if p:IsA("BasePart") then return p.Position end
-    local model = p:FindFirstAncestorOfClass("Model")
-    if model then
-        local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
-        if part then return part.Position end
-    end
-    return nil
-end
-local function fireBuyPrompt(prompt)
-    if not (prompt and prompt.Parent and prompt.Enabled) then return false end
-    if type(fireproximityprompt) == "function" then return pcall(fireproximityprompt, prompt) end
-    return pcall(function()
-        prompt:InputHoldBegin(); task.wait(math.max(prompt.HoldDuration or 0, 0.05) + 0.05); prompt:InputHoldEnd()
-    end)
-end
-Workspace.DescendantAdded:Connect(function(d) if d:IsA("ProximityPrompt") then autoBuyPrompts[d] = true end end)
-Workspace.DescendantRemoving:Connect(function(d) autoBuyPrompts[d] = nil end)
-task.defer(function()
-    pcall(function()
-        for _, d in ipairs(Workspace:GetDescendants()) do
-            if d:IsA("ProximityPrompt") then autoBuyPrompts[d] = true end
-        end
-    end)
-end)
-RunService.Heartbeat:Connect(function(dt)
-    if not _autoBuyEnabled then return end
-    autoBuyAccum = autoBuyAccum + dt
-    if autoBuyAccum < 0.2 then return end
-    autoBuyAccum = 0
-    local char = player.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local best, bestDist = nil, math.huge
-    for prompt in pairs(autoBuyPrompts) do
-        pcall(function()
-            if prompt.Parent and prompt.Enabled and isBuyPrompt(prompt) then
-                local pos = getPromptPos(prompt)
-                if pos then
-                    local dist = (root.Position - pos).Magnitude
-                    if dist < bestDist then bestDist = dist; best = prompt end
-                end
-            end
-        end)
-    end
-    if not best then return end
-    local maxDist = (best.MaxActivationDistance or 10) + 2
-    if bestDist > maxDist then return end
-    if best ~= autoBuyLastFired or os.clock() - autoBuyLastFiredTime >= 1.2 then
-        autoBuyLastFired = best; autoBuyLastFiredTime = os.clock()
-        task.spawn(function() fireBuyPrompt(best) end)
-    end
-end)
-
--- =========================================================================
--- [24] ANCHOR
--- =========================================================================
-local function setCharacterAnchored(state)
-    local char = player.Character
-    if not char then return end
-    for _, part in ipairs(char:GetDescendants()) do
-        pcall(function() if part:IsA("BasePart") then part.Anchored = state end end)
-    end
-end
-RunService.Heartbeat:Connect(function(dt)
-    if not _anchorEnabled then return end
-    local char = player.Character
-    if not char then return end
-    for _, part in ipairs(char:GetDescendants()) do
-        pcall(function() if part:IsA("BasePart") and not part.Anchored then part.Anchored = true end end)
-    end
-end)
-player.CharacterAdded:Connect(function()
-    task.wait(0.5)
-    if _anchorEnabled then setCharacterAnchored(true) end
-end)
-
--- =========================================================================
--- [25] FPS BOOST (from Aetherion, simplified)
--- =========================================================================
-local fpsRecords = {}
-local function applyFPSBoost(obj)
-    if not _fpsEnabled then return end
-    pcall(function()
-        if obj:IsA("BasePart") then
-            if obj.Material ~= Enum.Material.SmoothPlastic then obj.Material = Enum.Material.SmoothPlastic end
-            obj.CastShadow = false
-            obj.Reflectance = 0
-        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam")
-            or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
-            obj.Enabled = false
-        elseif obj:IsA("Light") or obj:IsA("PostEffect") or obj:IsA("Highlight") then
-            obj.Enabled = false
-        elseif obj:IsA("Decal") or obj:IsA("Texture") then
-            obj.Transparency = 1
-        elseif obj:IsA("Sky") or obj:IsA("Atmosphere") or obj:IsA("Clouds") then
-            obj.Enabled = false
-        end
-    end)
-end
-local fpsDescConn
-local function enableFPSBoost()
-    _fpsEnabled = true
-    pcall(function()
-        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
-        Lighting.GlobalShadows = false
-        Lighting.Brightness = 1
-        Lighting.EnvironmentDiffuseScale = 0
-        Lighting.EnvironmentSpecularScale = 0
-    end)
-    for _, obj in ipairs(Workspace:GetDescendants()) do applyFPSBoost(obj) end
-    for _, obj in ipairs(Lighting:GetDescendants()) do applyFPSBoost(obj) end
-    if fpsDescConn then fpsDescConn:Disconnect() end
-    fpsDescConn = Workspace.DescendantAdded:Connect(function(obj) if _fpsEnabled then applyFPSBoost(obj) end end)
-end
-local function disableFPSBoost()
-    _fpsEnabled = false
-    if fpsDescConn then fpsDescConn:Disconnect(); fpsDescConn = nil end
-    pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic end)
-end
-
--- =========================================================================
--- [26] TOGGLE WIRING
--- =========================================================================
-makeToggle(AutoDetectBtn, AutoDetectFill, AutoDetectLabel, autoOn, function(v)
-    autoOn = v; cfgSet("autoOn", v); saveConfig()
-end)
-makeToggle(SoundsBtn, SoundsFill, SoundsLabel, soundsOn, function(v)
-    soundsOn = v; cfgSet("soundsOn", v); saveConfig()
-end)
-makeToggle(Redeem3Btn, Redeem3Fill, Redeem3Label, redeem3On, function(v)
-    redeem3On = v; cfgSet("redeem3On", v); saveConfig()
-end)
-makeToggle(AutoTypeBtn, AutoTypeFill, AutoTypeLabel, autoTypeOn, function(v)
-    autoTypeOn = v; cfgSet("autoTypeOn", v); saveConfig()
-end)
-makeToggle(SpamOnBtn, SpamOnFill, SpamOnLabel, spamOnListen, function(v)
-    spamOnListen = v; cfgSet("spamOnListen", v); saveConfig()
-end)
-makeToggle(WordModeBtn, WordModeFill, WordModeLabel, wordMode, function(v)
-    wordMode = v; cfgSet("wordMode", v); saveConfig()
-end)
-makeToggle(SysBtn, SysFill, SysLabel, ignoreSystem, function(v)
-    ignoreSystem = v; cfgSet("ignoreSystem", v); saveConfig()
-end)
-makeToggle(DuoBtn, DuoFill, DuoLabel, duoMode, function(v)
-    duoMode = v; cfgSet("duoMode", v); saveConfig()
-end)
-
-makeToggle(SpamBtn, SpamFill, SpamLbl, false, function(v)
-    if v and not running then
-        setStatus("Turn Redeemer on first", "err")
-        SpamFill.BackgroundColor3 = C.OFF; SpamLbl.TextColor3 = C.TEXT; SpamLbl.Text = "OFF"
-        return
-    end
-    _isSpamming = v
-    if v then
-        _spamCount = 0
-        _spamThread = task.spawn(function()
-            while _isSpamming and running do
-                if wordMode then task.wait(0.1)
-                else
-                    local code = CodeDisplayLabel.Text
-                    if code and code ~= "" and code ~= "Code Will Show Here" and code ~= "Redeeming..." then
-                        _spamCount = _spamCount + 1
-                        submitCapturedCode(code)
-                    end
-                    task.wait(spamDelay)
-                end
-            end
-            _isSpamming = false
-        end)
-    end
-end)
-
-makeToggle(EvtBtn, EvtFill, EvtLbl, false, function(v)
-    if v then
-        if not eventBlock.ready then
-            setStatus("Events: " .. tostring(eventBlock.why), "err")
-            EvtFill.BackgroundColor3 = C.OFF; EvtLbl.TextColor3 = C.TEXT; EvtLbl.Text = "OFF"
-            return
-        end
-        local ok, msg = eventBlock.Block()
-        setStatus(msg or "blocked", ok and "ok" or "err")
     else
-        pcall(eventBlock.Unblock)
-        setStatus("events unblocked", nil)
+        feedAdd(text, nil)
+    end
+end
+
+task.spawn(function()
+    local remote
+    for _ = 1, 40 do
+        remote = findNotificationRemote()
+        if remote then break end
+        task.wait(0.5)
+    end
+    if not remote then setStatus("Notification remote not found", "err"); return end
+    local ok = pcall(function()
+        remote.OnClientEvent:Connect(function(...)
+            local text
+            for _, a in ipairs({...}) do
+                if type(a) == "string" then text = a; break end
+            end
+            if not text then return end
+            text = stripTags(text):match("^%s*(.-)%s*$") or ""
+            if text == "" then return end
+            pcall(processText, text)
+        end)
+    end)
+    if not ok then setStatus("Listener failed", "err") end
+end)
+
+-- =========================================================================
+-- [11] TOGGLE WIRING
+-- =========================================================================
+makeToggle(UI.spamBtn, UI.spamFill, UI.spamLbl, false, function(v)
+    if v and not S.lastCode then setStatus("No code yet", "err"); return false end
+    S.spamming = v
+    if v then
+        task.spawn(function()
+            while S.spamming and S.lastCode do
+                submitCodeAdvanced(S.lastCode)
+                task.wait(S.spamDelay)
+            end
+            S.spamming = false
+        end)
     end
 end)
 
-makeToggle(TF1Btn, TF1Fill, TF1Lbl, false, function(v)
-    _autoBuyEnabled = v
-end)
-makeToggle(TF2Btn, TF2Fill, TF2Lbl, false, function(v)
-    _anchorEnabled = v; setCharacterAnchored(v)
-end)
-makeToggle(TF3Btn, TF3Fill, TF3Lbl, false, function(v)
-    if v then enableAntiRagdoll() else disableAntiRagdoll() end
-end)
-makeToggle(TF4Btn, TF4Fill, TF4Lbl, false, function(v)
-    if v then enableFPSBoost() else disableFPSBoost() end
-end)
-makeToggle(TF5Btn, TF5Fill, TF5Lbl, false, function(v)
-    _antiLagEnabled = v
+makeToggle(UI.evtBtn, UI.evtFill, UI.evtLbl, false, function(v)
+    local ok = pcall(function()
+        local controllers = ReplicatedStorage:FindFirstChild("Controllers")
+        local ec = require(controllers:FindFirstChild("EventController"))
+        if v then
+            if not S.origExecute then S.origExecute = ec.Execute end
+            ec.Execute = function() return false end
+        elseif S.origExecute then
+            ec.Execute = S.origExecute
+        end
+    end)
+    if not ok then setStatus("Event Block failed", "err"); return false end
+    setStatus(v and "Events blocked" or "Events unblocked", v and "ok" or nil)
 end)
 
-StartStopBtn.MouseButton1Click:Connect(function() setRunning(not running) end)
+local function applyAnchor(v)
+    local ch = player.Character
+    if not ch then return end
+    for _, part in ipairs(ch:GetDescendants()) do
+        if part:IsA("BasePart") then part.Anchored = v end
+    end
+end
+local function applyRagdoll(v)
+    local ch = player.Character
+    local h = ch and ch:FindFirstChildOfClass("Humanoid")
+    if h then
+        h:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, not v)
+        h:SetStateEnabled(Enum.HumanoidStateType.Physics, not v)
+    end
+end
+
+do
+    local defs = {
+        {"Auto Buy", function(v) S.autoBuy = v end},
+        {"Anchor", function(v) S.anchor = v; applyAnchor(v) end},
+        {"Anti Ragdoll", function(v) S.ragdoll = v; applyRagdoll(v) end},
+        {"FPS Boost", function(v)
+            S.fps = v
+            pcall(function()
+                if v then
+                    S.oldQuality = S.oldQuality or settings().Rendering.QualityLevel
+                    S.oldShadows = Lighting.GlobalShadows
+                    settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+                    Lighting.GlobalShadows = false
+                else
+                    if S.oldQuality then settings().Rendering.QualityLevel = S.oldQuality end
+                    if S.oldShadows ~= nil then Lighting.GlobalShadows = S.oldShadows end
+                end
+            end)
+        end},
+    }
+    for i, d in ipairs(defs) do
+        local row = makeRow(UI.tabs.TraitFarm.page, (i - 1) * 76, d[1])
+        local btn, fill, lbl = makeToggleButton(row, 476, "OFF")
+        makeToggle(btn, fill, lbl, false, d[2])
+    end
+end
+
+player.CharacterAdded:Connect(function()
+    task.wait(1)
+    if S.anchor then applyAnchor(true) end
+    if S.ragdoll then applyRagdoll(true) end
+end)
+
+UI.startBtn.MouseButton1Click:Connect(function() setRunning(not S.running) end)
 UIS.InputBegan:Connect(function(input, processed)
     if processed then return end
-    if input.KeyCode == Enum.KeyCode.F then setRunning(not running) end
+    if input.KeyCode == Enum.KeyCode.F then setRunning(not S.running) end
 end)
 
 -- =========================================================================
--- [27] NOTIFICATION LISTENER
+-- [12] HUD BUTTON & DRAGGING
 -- =========================================================================
-local listenConnection
-local notifyRemote = findNotificationRemote()
-if notifyRemote then
-    listenConnection = notifyRemote.OnClientEvent:Connect(function(...)
-        local text = stripTags(tostring((...) or ""))
-        text = text:match("^%s*(.-)%s*$") or ""
-        if text == "" then return end
-        pcall(processText, text)
+do
+    local hud = new("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
+        Position = UDim2.new(1, -50, 0.3, 0), Size = UDim2.new(0, 89, 0, 89), ZIndex = 10}, gui)
+    new("UIScale", {Scale = 0.5}, hud)
+    local toggle = new("TextButton", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
+        Position = UDim2.new(0.5, 0, 0.5, 0), Size = UDim2.new(0, 89, 0, 89), AutoButtonColor = false, Text = ""}, hud)
+    corner(toggle, 44)
+    local edge = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 2, 0, 2), Size = UDim2.new(1, -4, 1, -4)}, toggle)
+    corner(edge, 44)
+    stroke(edge, 2, C.STROKE, true)
+    local face = new("Frame", {BackgroundColor3 = Color3.fromRGB(25, 25, 25), BorderSizePixel = 0, ClipsDescendants = true,
+        Position = UDim2.new(0, 4, 0, 4), Size = UDim2.new(1, -8, 1, -8)}, toggle)
+    corner(face, 44)
+    new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), FontFace = FH, Text = "S",
+        TextColor3 = C.TEXT, TextSize = 56}, face)
+    toggle.MouseButton1Click:Connect(function() win.Visible = not win.Visible end)
+
+    local drag = {active = false}
+    header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            drag.active = true; drag.start = input.Position; drag.pos = win.Position
+            local conn
+            conn = input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    drag.active = false
+                    if conn then conn:Disconnect() end
+                    cfgSet("guiXScale", win.Position.X.Scale); cfgSet("guiXOffset", win.Position.X.Offset)
+                    cfgSet("guiYScale", win.Position.Y.Scale); cfgSet("guiYOffset", win.Position.Y.Offset)
+                    saveConfig()
+                end
+            end)
+        end
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if drag.active and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local d = input.Position - drag.start
+            win.Position = UDim2.new(drag.pos.X.Scale, drag.pos.X.Offset + d.X, drag.pos.Y.Scale, drag.pos.Y.Offset + d.Y)
+        end
     end)
 end
 
-if getgenv then
-    getgenv().StopShoxRedeemer = function()
-        if listenConnection then pcall(function() listenConnection:Disconnect() end); listenConnection = nil end
-        if antiRagdoll.Enabled then disableAntiRagdoll() end
-        if _fpsEnabled then disableFPSBoost() end
-        if ShoxIntroGui then pcall(function() ShoxIntroGui:Destroy() end) end
-        if v1 then v1:Destroy() end
-    end
-end
-
 -- =========================================================================
--- [28] RESPAWN
+-- [13] FINALIZE
 -- =========================================================================
-local function resetUIState()
-    _capturedParts = {}; _submitting = false; _lastBox = nil; _seen = {}
-    setRunning(false)
-end
-local function bindCharacter(char)
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then hum.Died:Connect(resetUIState) end
-    char.ChildAdded:Connect(function(c)
-        if c:IsA("Humanoid") then c.Died:Connect(resetUIState) end
-    end)
-end
-player.CharacterAdded:Connect(function(char)
-    resetUIState(); bindCharacter(char)
-end)
-if player.Character then bindCharacter(player.Character) end
-
--- =========================================================================
--- [29] FINALIZE
--- =========================================================================
+selectTab("Redeemer")
 setRunning(false)
-v1.Parent = parent
-return v1
+print("[Shox] Code Sniper loaded")
