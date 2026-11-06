@@ -12,7 +12,7 @@ if env.CodeSniperStop then pcall(env.CodeSniperStop) end
 
 local function RGB(r, g, b) return Color3.fromRGB(r, g, b) end
 local CS = {
-	Version = "v1.6",
+	Version = "v1.7",
 	RedeemState = "idle",
 	Running = true,
 	Open = true,
@@ -26,6 +26,8 @@ local CS = {
 	SeenT = 0,
 	Armed = nil,
 	ArmSource = nil,
+	ArmRoot = nil,
+	Testing = false,
 	Btn = nil,
 	Tick = 0,
 	TickN = 0,
@@ -159,7 +161,7 @@ CS.updateStatus = function()
 	if not U.status then return end
 	local isArmed = CS.armed()
 	local state = CS.Settings.Sniper and (isArmed and "Armed" or "Listening") or "Sniper off"
-	local mode = CS.Settings.SafeMode and "SAFE: types code, no submit" or "LIVE: types + submits"
+	local mode = CS.Testing and "LOCAL TEST: no game action" or (CS.Settings.SafeMode and "SAFE: types code, no submit" or "LIVE: types + submits")
 	local redeem = ({
 		idle = "No redeem action",
 		recognized = "Code recognized (not entered)",
@@ -248,6 +250,7 @@ CS.refresh = function()
 	U.manual.BackgroundColor3 = T.panel
 	U.manual.TextColor3 = T.text
 	U.manual.PlaceholderColor3 = T.sub
+	if testInput then testInput.BackgroundColor3 = T.panel testInput.TextColor3 = T.text testInput.PlaceholderColor3 = T.sub end
 	for _, entry in ipairs(U.ddItems) do
 		local selected = entry[3] == CS.Settings.Theme
 		CS.tw(entry[2], { Thickness = selected and 3 or 1 }, 0.3)
@@ -795,8 +798,33 @@ CS.submit = function(code, source, force)
 	CS.updateStatus()
 end
 
+-- Resolve the nearest notification/announcement container shared by sibling labels.
+-- This permits separate word labels inside one toast, but not unrelated UI elsewhere.
+CS.announcementRoot = function(sourceElement)
+	if not sourceElement then return nil end
+	local node = sourceElement
+	local fallback = sourceElement.Parent
+	while node and node ~= S.Players.LocalPlayer:FindFirstChild("PlayerGui") do
+		local name = tostring(node.Name or ""):lower()
+		if name:find("notification", 1, true) or name:find("notif", 1, true)
+			or name:find("announce", 1, true) or name:find("toast", 1, true)
+			or name:find("banner", 1, true) or name:find("popup", 1, true)
+			or name:find("message", 1, true) or name:find("alert", 1, true) then
+			return node
+		end
+		node = node.Parent
+	end
+	-- If the notification name is on the label itself, only allow siblings
+	-- under its immediate parent; never widen the scope to all of PlayerGui.
+	return fallback
+end
+
 CS.deliver = function(code)
-	if CS.Settings.AutoSubmit then
+	if CS.Testing then
+		CS.LastCode = code
+		CS.RedeemState = "recognized"
+		CS.log("LOCAL TEST PASS: " .. code .. " (no game UI / no server action)")
+	elseif CS.Settings.AutoSubmit then
 		CS.submit(code, "announcement", false)
 	else
 		CS.LastCode = code
@@ -812,13 +840,14 @@ CS.arm = function(src, firstPiece, sourceElement)
 	end
 	CS.Armed = os.clock()
 	CS.ArmSource = sourceElement
+	CS.ArmRoot = CS.announcementRoot(sourceElement)
 	CS.Buffer = {}
 	if firstPiece and firstPiece ~= "" then
 		table.insert(CS.Buffer, firstPiece)
 	end
 	CS.FragmentToken = CS.FragmentToken + 1
 	local token = CS.FragmentToken
-	CS.log("Trigger (" .. tostring(src) .. "): collecting from its source only")
+	CS.log("Trigger (" .. tostring(src) .. "): collecting announcement words")
 	CS.updateStatus()
 	task.delay(CS.FragmentDelays[CS.Settings.FragmentDelay], function()
 		if CS.Running and token == CS.FragmentToken and CS.armed() then
@@ -827,6 +856,7 @@ CS.arm = function(src, firstPiece, sourceElement)
 			else
 				CS.Armed = nil
 				CS.ArmSource = nil
+				CS.ArmRoot = nil
 				CS.Buffer = {}
 				CS.FragmentToken = CS.FragmentToken + 1
 				CS.log("Trigger expired without code fragments")
@@ -844,6 +874,7 @@ CS.finishBuffer = function(token)
 	CS.Buffer = {}
 	CS.Armed = nil
 	CS.ArmSource = nil
+	CS.ArmRoot = nil
 	CS.log("Fragments complete: " .. code)
 	CS.deliver(code)
 end
@@ -854,9 +885,10 @@ local STOP_WORDS = {
 }
 CS.onPiece = function(text, src, sourceElement, isPrefixExtension)
 	if not CS.Settings.Sniper or not CS.Settings.UseNotify or not CS.armed() then return end
-	if not isPrefixExtension or not sourceElement or sourceElement ~= CS.ArmSource then
-		return
-	end
+	if not sourceElement then return end
+	local sameSourceExtension = isPrefixExtension and sourceElement == CS.ArmSource
+	local sameAnnouncement = CS.ArmRoot ~= nil and CS.announcementRoot(sourceElement) == CS.ArmRoot
+	if not sameSourceExtension and not sameAnnouncement then return end
 	local piece
 	for tok in tostring(text):gmatch("[%w_+%-]+") do
 		local candidate = CS.strip(tok)
@@ -877,18 +909,24 @@ CS.onPiece = function(text, src, sourceElement, isPrefixExtension)
 	end)
 end
 
--- Trigger payloads stop at the first non-prose token; source identity is retained.
+-- Trigger payloads stop at the first non-prose token; announcement container is retained.
 CS.onText = function(text, src, sourceElement)
 	if not CS.Settings.Sniper or not CS.Settings.UseNotify then return end
 	text = CS.clean(text)
 	if text == "" then return end
 	local now = os.clock()
 	if now - CS.SeenT > 60 then
-		CS.Seen = {}
+		CS.Seen = setmetatable({}, { __mode = "k" })
 		CS.SeenT = now
 	end
-	if CS.Seen[text] and now - CS.Seen[text] < 0.35 then return end
-	CS.Seen[text] = now
+	local seenForSource = sourceElement and CS.Seen[sourceElement] or nil
+	if sourceElement and not seenForSource then
+		seenForSource = {}
+		CS.Seen[sourceElement] = seenForSource
+	end
+	local seenStamp = seenForSource and seenForSource[text] or nil
+	if seenStamp and now - seenStamp < 0.35 then return end
+	if seenForSource then seenForSource[text] = now end
 	local rest = CS.trigger(text)
 	if rest ~= nil then
 		local firstCode
@@ -903,16 +941,22 @@ CS.onText = function(text, src, sourceElement)
 				break
 			end
 		end
-		-- A trigger with no usable payload is not armed. A later typewriter
-		-- extension from this same label may start collection in hookGui.
-		if not firstCode then
-			CS.log("Trigger ignored: no code token in source text")
-			return
-		end
+		-- A trigger with no payload is still armed so following sibling labels can supply the code.
 		CS.arm(src, firstCode, sourceElement)
+		if not firstCode then
+			CS.log("Trigger found: waiting for separate announcement words")
+		else
+			CS.log("Trigger found with first code fragment: " .. firstCode)
+		end
 		return
 	end
-	-- Non-trigger notifications are never accepted as code fragments.
+	-- Accept a word from another label only when it belongs to the same
+	-- notification/announcement container as the trigger label.
+	if CS.armed() and sourceElement and CS.ArmRoot ~= nil
+		and CS.announcementRoot(sourceElement) == CS.ArmRoot
+		and sourceElement ~= CS.ArmSource then
+		CS.onPiece(text, src, sourceElement, false)
+	end
 end
 
 -- Screen text is the only detector source; no remote hooks or introspection.
@@ -1036,6 +1080,7 @@ CS.stop = function()
 	CS.Running = false
 	CS.Armed = nil
 	CS.ArmSource = nil
+	CS.ArmRoot = nil
 	CS.Buffer = {}
 	pcall(CS.save)
 	CS.stopIntro()
@@ -1139,6 +1184,18 @@ U.manual = CS.make("TextBox", {
 CS.make("UICorner", { CornerRadius = UDim.new(0, 9) }, U.manual)
 CS.make("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, U.manual)
 
+-- Local-only announcement tester. Parts are simulated with temporary local labels.
+local testInput = CS.make("TextBox", {
+	Size = UDim2.new(1, 0, 1, 0), Text = "Use code | We | Are | Cool",
+	PlaceholderText = "Use code | word 1 | word 2 | word 3",
+	ClearTextOnFocus = false, Font = Enum.Font.Gotham, TextSize = 11, BorderSizePixel = 0,
+	TextTruncate = Enum.TextTruncate.AtEnd,
+}, CS.row(30))
+CS.make("UICorner", { CornerRadius = UDim.new(0, 9) }, testInput)
+CS.make("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, testInput)
+local testRow = CS.row(32)
+U.testRun = CS.button(testRow, "Run Local Fake Announcement Test", 1, 1)
+
 local submitRow = CS.row(34)
 U.submitManual = CS.button(submitRow, "Redeem Manual", 1, 2)
 U.submitLast = CS.button(submitRow, "Redeem Last", 2, 2)
@@ -1203,6 +1260,7 @@ CS.on(U.sniper.MouseButton1Click, function()
 	CS.Buffer = {}
 	CS.Armed = nil
 	CS.ArmSource = nil
+	CS.ArmRoot = nil
 	CS.RedeemState = "idle"
 	CS.FragmentToken = CS.FragmentToken + 1
 	CS.log(CS.Settings.Sniper and "Sniper ON: waiting for trigger" or "Sniper OFF")
@@ -1248,6 +1306,7 @@ CS.on(U.notify.MouseButton1Click, function()
 	CS.Buffer = {}
 	CS.Armed = nil
 	CS.ArmSource = nil
+	CS.ArmRoot = nil
 	CS.RedeemState = "idle"
 	CS.FragmentToken = CS.FragmentToken + 1
 	CS.log(CS.Settings.UseNotify and "Detect ON" or "Detect OFF")
@@ -1261,6 +1320,42 @@ end)
 CS.on(U.submitLast.MouseButton1Click, function()
 	if not CS.LastCode then CS.log("No code yet") return end
 	CS.submit(CS.LastCode, "last", true)
+end)
+CS.on(U.testRun.MouseButton1Click, function()
+	local parts = {}
+	for part in tostring(testInput.Text):gmatch("([^|]+)") do
+		part = CS.clean(part)
+		if part ~= "" then parts[#parts + 1] = part end
+	end
+	if #parts < 2 then CS.log("Local test needs trigger + at least one word, separated by |") return end
+	local oldSniper, oldDetect = CS.Settings.Sniper, CS.Settings.UseNotify
+	CS.Settings.Sniper, CS.Settings.UseNotify = true, true
+	CS.Testing = true
+	CS.Buffer, CS.Armed, CS.ArmSource, CS.ArmRoot = {}, nil, nil, nil
+	CS.FragmentToken = CS.FragmentToken + 1
+	local fakeRoot = Instance.new("Folder")
+	fakeRoot.Name = "LocalAnnouncementTest"
+	local labels = {}
+	for i, value in ipairs(parts) do
+		local label = Instance.new("StringValue")
+		label.Name = "Part" .. i
+		label.Value = value
+		label.Parent = fakeRoot
+		labels[i] = label
+	end
+	CS.log("LOCAL TEST: simulating " .. table.concat(parts, " / "))
+	for i, label in ipairs(labels) do
+		CS.onText(label.Value, "local-test", label)
+	end
+	if CS.armed() and #CS.Buffer > 0 then CS.finishBuffer(CS.FragmentToken) end
+	if CS.armed() and #CS.Buffer == 0 then
+		CS.Armed, CS.ArmSource, CS.ArmRoot = nil, nil, nil
+		CS.log("LOCAL TEST: no code fragments captured")
+	end
+	CS.Testing = false
+	CS.Settings.Sniper, CS.Settings.UseNotify = oldSniper, oldDetect
+	fakeRoot:Destroy()
+	CS.updateStatus()
 end)
 CS.on(U.trans.MouseButton1Click, function()
 	CS.Settings.Trans = CS.Settings.Trans % #CS.Trans + 1
@@ -1312,8 +1407,11 @@ CS.on(S.RS.Heartbeat, function(dt)
 			for code, stamp in pairs(CS.Recent) do
 				if now - stamp > 60 then CS.Recent[code] = nil end
 			end
-			for seenText, stamp in pairs(CS.Seen) do
-				if now - stamp > 5 then CS.Seen[seenText] = nil end
+			for sourceElement, sourceSeen in pairs(CS.Seen) do
+				for seenText, stamp in pairs(sourceSeen) do
+					if now - stamp > 5 then sourceSeen[seenText] = nil end
+				end
+				if next(sourceSeen) == nil then CS.Seen[sourceElement] = nil end
 			end
 		end
 		CS.updateStatus()
