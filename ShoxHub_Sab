@@ -1,14 +1,14 @@
 -- =========================================================================
--- SHOX HUB CODE SNIPER v1.0
+-- SHOX HUB CODE SNIPER v1.1
 -- =========================================================================
 local cloneref = cloneref or function(x) return x end
 local function svc(name) return cloneref(game:GetService(name)) end
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
-local Players, ReplicatedStorage, UIS, TweenService, RunService, SoundService, Lighting =
+local Players, ReplicatedStorage, UIS, TweenService, RunService, SoundService, Lighting, Debris =
     svc("Players"), svc("ReplicatedStorage"), svc("UserInputService"), svc("TweenService"),
-    svc("RunService"), svc("SoundService"), svc("Lighting")
+    svc("RunService"), svc("SoundService"), svc("Lighting"), svc("Debris")
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -16,13 +16,28 @@ local playerGui = player:WaitForChild("PlayerGui")
 local getupvalues_    = (debug and debug.getupvalues) or getupvalues
 local getconnections_ = getconnections or (debug and debug.getconnections)
 local setupvalue_     = (debug and debug.setupvalue) or setupvalue
+local firesignal_     = firesignal
+
+-- Re-execute safety: kill the previous instance (GUI, listeners, spam loops)
+local genv = (getgenv and getgenv()) or _G
+if genv.__ShoxSniperCleanup then pcall(genv.__ShoxSniperCleanup) end
+local conns = {}
+local function track(c) conns[#conns + 1] = c; return c end
 
 print("[Shox] Code Sniper starting")
 
 -- =========================================================================
--- [1] INTRO (Shox Hub beat intro)
+-- [1] INTRO (1:1 copy of Intro 1 from the Duel script)
 -- =========================================================================
+local shoxIntroFinish
 do
+    local ShoxHubTweenService = TweenService
+    local ShoxHubRunService = RunService
+    local ShoxHubSoundService = SoundService
+    local ShoxHubPlayer = player
+
+    local SHOX_UI_FONT = Enum.Font.GothamBlack
+
     local ShoxIntro = {
         Running = true,
         Letters = {"S", "H", "O", "X", "H", "U", "B"},
@@ -34,109 +49,184 @@ do
         IntroUrl = "https://files.catbox.moe/ocdxaf.ogg",
         Dir = "CodeSniper",
         MusicDir = "CodeSniper/music",
+        Launch = 0,
     }
     local ShoxIntroGui, ShoxIntroSound, ShoxIntroHeartbeat
 
-    local function introMake(class, props, parent)
-        local obj = Instance.new(class)
+    local function shoxIntroMake(className, props, parent)
+        local obj = Instance.new(className)
         for k, v in pairs(props) do obj[k] = v end
         if parent then obj.Parent = parent end
         return obj
     end
-    local function introTween(obj, props, duration, style, direction)
+
+    local function shoxIntroTween(obj, props, duration, style, direction)
         if not obj or not obj.Parent then return nil end
-        local t = TweenService:Create(obj, TweenInfo.new(duration or 0.25, style or Enum.EasingStyle.Quint, direction or Enum.EasingDirection.Out), props)
-        t:Play()
-        return t
+        local tween = ShoxHubTweenService:Create(
+            obj,
+            TweenInfo.new(duration or 0.25, style or Enum.EasingStyle.Quint, direction or Enum.EasingDirection.Out),
+            props
+        )
+        tween:Play()
+        return tween
     end
-    local function introParent()
+
+    local function shoxIntroParent()
         local ok, hui = pcall(function() return gethui and gethui() end)
         if ok and hui then return hui end
-        return player:FindFirstChildOfClass("PlayerGui") or game:GetService("CoreGui")
+        local pg = ShoxHubPlayer:FindFirstChildOfClass("PlayerGui")
+        return pg or game:GetService("CoreGui")
     end
-    local function introFinish()
+
+    function shoxIntroFinish()
         ShoxIntro.Running = false
         if ShoxIntroHeartbeat then ShoxIntroHeartbeat:Disconnect(); ShoxIntroHeartbeat = nil end
-        if ShoxIntroSound then pcall(function() ShoxIntroSound:Stop(); ShoxIntroSound:Destroy() end); ShoxIntroSound = nil end
+        if ShoxIntroSound then
+            pcall(function()
+                ShoxIntroSound:Stop()
+                ShoxIntroSound:Destroy()
+            end)
+            ShoxIntroSound = nil
+        end
         if ShoxIntroGui then
-            local gui = ShoxIntroGui; ShoxIntroGui = nil
-            introTween(gui:FindFirstChild("IntroBG"), {BackgroundTransparency = 1}, 0.25)
-            for _, obj in ipairs(gui:GetDescendants()) do
-                if obj:IsA("TextLabel") then introTween(obj, {TextTransparency = 1}, 0.2)
-                elseif obj:IsA("Frame") and obj.Name ~= "IntroBG" then introTween(obj, {BackgroundTransparency = 1}, 0.2) end
+            local g = ShoxIntroGui
+            ShoxIntroGui = nil
+            shoxIntroTween(g:FindFirstChild("IntroBG"), {BackgroundTransparency = 1}, 0.25)
+            for _, obj in ipairs(g:GetDescendants()) do
+                if obj:IsA("TextLabel") then
+                    shoxIntroTween(obj, {TextTransparency = 1}, 0.2)
+                elseif obj:IsA("Frame") and obj.Name ~= "IntroBG" then
+                    shoxIntroTween(obj, {BackgroundTransparency = 1}, 0.2)
+                end
             end
-            task.delay(0.28, function() if gui and gui.Parent then gui:Destroy() end end)
+            task.delay(0.28, function()
+                if g and g.Parent then g:Destroy() end
+            end)
         end
     end
-    local function introSpark(stage, letters, count, wide, accent)
+
+    local function shoxIntroSpark(stage, letters, count, wide, accent)
         for _ = 1, count do
             local angle = math.random() * math.pi * 2
             local distance = (wide and 260 or 130) * (0.4 + math.random() * 0.8)
             local x = letters[math.random(1, #letters)].x
-            local p = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, x, 0.5, -10),
-                Size = UDim2.fromOffset(6, 6), Rotation = math.random(0, 90), BackgroundColor3 = accent, BorderSizePixel = 0}, stage)
-            introTween(p, {Position = UDim2.new(0.5, x + math.cos(angle) * distance, 0.5, -10 + math.sin(angle) * distance),
-                BackgroundTransparency = 1, Size = UDim2.fromOffset(2, 2)}, 0.55)
-            task.delay(0.6, function() if p and p.Parent then p:Destroy() end end)
+            local particle = shoxIntroMake("Frame", {
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                Position = UDim2.new(0.5, x, 0.5, -10),
+                Size = UDim2.fromOffset(6, 6),
+                Rotation = math.random(0, 90),
+                BackgroundColor3 = accent,
+                BorderSizePixel = 0,
+            }, stage)
+            shoxIntroTween(particle, {
+                Position = UDim2.new(0.5, x + math.cos(angle) * distance, 0.5, -10 + math.sin(angle) * distance),
+                BackgroundTransparency = 1,
+                Size = UDim2.fromOffset(2, 2),
+            }, 0.55)
+            task.delay(0.6, function()
+                if particle and particle.Parent then particle:Destroy() end
+            end)
         end
     end
-    local function introRing(stage, accent, thickness)
-        local ring = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, -10),
-            Size = UDim2.fromOffset(40, 40), BackgroundTransparency = 1, BorderSizePixel = 0}, stage)
-        introMake("UICorner", {CornerRadius = UDim.new(1, 0)}, ring)
-        local stroke = introMake("UIStroke", {Thickness = thickness, Color = accent}, ring)
-        introTween(ring, {Size = UDim2.fromOffset(820, 820)}, 0.7)
-        introTween(stroke, {Transparency = 1}, 0.7)
-        task.delay(0.8, function() if ring and ring.Parent then ring:Destroy() end end)
+
+    local function shoxIntroRing(stage, accent, thickness)
+        local ring = shoxIntroMake("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0.5, 0, 0.5, -10),
+            Size = UDim2.fromOffset(40, 40),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+        }, stage)
+        shoxIntroMake("UICorner", {CornerRadius = UDim.new(1, 0)}, ring)
+        local strokeObj = shoxIntroMake("UIStroke", {Thickness = thickness, Color = accent}, ring)
+        shoxIntroTween(ring, {Size = UDim2.fromOffset(820, 820)}, 0.7)
+        shoxIntroTween(strokeObj, {Transparency = 1}, 0.7)
+        task.delay(0.8, function()
+            if ring and ring.Parent then ring:Destroy() end
+        end)
     end
-    local function introPlay()
-        local accent   = Color3.fromRGB(125, 130, 140)
-        local subColor = Color3.fromRGB(190, 200, 215)
-        local introParent_ = introParent()
+
+    local function shoxIntroPlay()
+        -- Pure Black & White Intro
+        local accent = Color3.fromRGB(255, 255, 255)
+        local subColor = Color3.fromRGB(200, 200, 200)
+        local introParent = shoxIntroParent()
         pcall(function()
-            local old = introParent_:FindFirstChild("ShoxHubIntro") or introParent_:FindFirstChild("ShoxCodeSniperIntro")
+            local old = introParent:FindFirstChild("ShoxHubIntro") or introParent:FindFirstChild("ShoxCodeSniperIntro")
             if old then old:Destroy() end
         end)
-        local gui = introMake("ScreenGui", {Name = "ShoxHubIntro", ResetOnSpawn = false, IgnoreGuiInset = true,
-            DisplayOrder = 2000005, ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, introParent_)
-        pcall(function() if syn and syn.protect_gui then syn.protect_gui(gui) end end)
-        ShoxIntroGui = gui
+        local g = shoxIntroMake("ScreenGui", {
+            Name = "ShoxHubIntro",
+            ResetOnSpawn = false,
+            IgnoreGuiInset = true,
+            DisplayOrder = 2000005,
+            ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        }, introParent)
+        pcall(function() if syn and syn.protect_gui then syn.protect_gui(g) end end)
+        ShoxIntroGui = g
+
         local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
         local base = math.clamp(math.min(viewport.X * 0.6 / 376, viewport.Y * 0.4 / 80), 0.5, 3)
-        local bg = introMake("Frame", {Name = "IntroBG", Size = UDim2.fromScale(1, 1),
-            BackgroundColor3 = Color3.fromRGB(10, 22, 40), BackgroundTransparency = 1, BorderSizePixel = 0, Active = false}, gui)
-        introTween(bg, {BackgroundTransparency = 0}, 0.3)
-        local stage = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-            Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Active = false}, gui)
-        local stageScale = introMake("UIScale", {Scale = base}, stage)
+        local bg = shoxIntroMake("Frame", {
+            Name = "IntroBG", Size = UDim2.fromScale(1, 1),
+            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+            BackgroundTransparency = 1, BorderSizePixel = 0, Active = false,
+        }, g)
+        shoxIntroTween(bg, {BackgroundTransparency = 0}, 0.3)
+
+        local stage = shoxIntroMake("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Active = false,
+        }, g)
+        local stageScale = shoxIntroMake("UIScale", {Scale = base}, stage)
         local letters = {}
         for i, character in ipairs(ShoxIntro.Letters) do
             local x = -163 + (i - 1) * 50 + (i >= 5 and 26 or 0)
-            local wrap = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, x, 0.5, -10),
-                Size = UDim2.fromOffset(50, 80), BackgroundTransparency = 1, BorderSizePixel = 0, Active = false}, stage)
-            local letterScale = introMake("UIScale", {Scale = 1}, wrap)
-            local label = introMake("TextLabel", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-                Text = character, Font = Enum.Font.GothamBlack, TextSize = 76, TextColor3 = accent, TextTransparency = 1, Active = false}, wrap)
+            local wrap = shoxIntroMake("Frame", {
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                Position = UDim2.new(0.5, x, 0.5, -10),
+                Size = UDim2.fromOffset(50, 80),
+                BackgroundTransparency = 1, BorderSizePixel = 0, Active = false,
+            }, stage)
+            local letterScale = shoxIntroMake("UIScale", {Scale = 1}, wrap)
+            local label = shoxIntroMake("TextLabel", {
+                Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+                Text = character, Font = Enum.Font.GothamBlack, TextSize = 76,
+                TextColor3 = accent, TextTransparency = 1, Active = false,
+            }, wrap)
             letters[i] = {w = wrap, us = letterScale, lb = label, x = x, hit = -10, amp = 0, rev = math.huge}
         end
-        local line = introMake("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 52),
-            Size = UDim2.fromOffset(0, 4), BackgroundColor3 = accent, BorderSizePixel = 0}, stage)
-        local subtitle = introMake("TextLabel", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 80),
-            Size = UDim2.fromOffset(376, 22), BackgroundTransparency = 1, Text = "discord.gg/EA7xS26mA9",
-            Font = Enum.Font.GothamBold, TextSize = 17, TextColor3 = subColor, TextTransparency = 1}, stage)
-        local flash = introMake("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = accent,
-            BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 5, Active = false}, gui)
-        local skip = introMake("TextButton", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 14),
-            Size = UDim2.fromOffset(78, 32), BackgroundColor3 = Color3.fromRGB(24, 48, 80), Text = "Skip",
-            TextColor3 = Color3.fromRGB(225, 242, 255), Font = Enum.Font.GothamBold, TextSize = 14,
-            AutoButtonColor = false, BorderSizePixel = 0, ZIndex = 10, Active = true}, gui)
-        introMake("UICorner", {CornerRadius = UDim.new(0, 9)}, skip)
-        introMake("UIStroke", {Color = accent, Thickness = 1, Transparency = 0.55}, skip)
-        skip.Activated:Connect(function() introFinish() end)
+
+        local line = shoxIntroMake("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 52),
+            Size = UDim2.fromOffset(0, 4), BackgroundColor3 = accent, BorderSizePixel = 0,
+        }, stage)
+        local subtitle = shoxIntroMake("TextLabel", {
+            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 80),
+            Size = UDim2.fromOffset(376, 22), BackgroundTransparency = 1,
+            Text = "discord.gg/EA7xS26mA9", Font = SHOX_UI_FONT,
+            TextSize = 17, TextColor3 = subColor, TextTransparency = 1,
+        }, stage)
+        local flash = shoxIntroMake("Frame", {
+            Size = UDim2.fromScale(1, 1), BackgroundColor3 = accent,
+            BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 5, Active = false,
+        }, g)
+        local skip = shoxIntroMake("TextButton", {
+            AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 14),
+            Size = UDim2.fromOffset(78, 32), BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+            Text = "Skip", TextColor3 = Color3.fromRGB(255, 255, 255),
+            Font = SHOX_UI_FONT, TextSize = 14, AutoButtonColor = false,
+            BorderSizePixel = 0, ZIndex = 10, Active = true,
+        }, g)
+        shoxIntroMake("UICorner", {CornerRadius = UDim.new(0, 9)}, skip)
+        shoxIntroMake("UIStroke", {Color = accent, Thickness = 1, Transparency = 0.55}, skip)
+        skip.Activated:Connect(function() shoxIntroFinish() end)
+
         local timeline, beatIndex = 0, 1
         local pulse, shake, flashAlpha, underline, subtitleAlpha = 0, 0, 0, 0, 0
         local startedAt = os.clock()
         local audioStarted = false
+
         local function fireBeat(beat)
             local strength, kind = beat[2], beat[3]
             pulse = math.max(pulse, 0.05 + 0.06 * strength)
@@ -146,94 +236,133 @@ do
             if kind == "a" then first, last, amplitude = 1, 4, 1.6
             elseif kind == "b" then first, last, amplitude = 5, 7, 1.6 end
             for i = first, last do
-                local e = letters[i]
-                e.hit = timeline + (i - first) * 0.035
-                e.amp = amplitude
-                if amplitude > 1 then e.rev = e.hit end
+                local entry = letters[i]
+                entry.hit = timeline + (i - first) * 0.035
+                entry.amp = amplitude
+                if amplitude > 1 then entry.rev = entry.hit end
             end
             if kind == "drop" then
                 pulse, shake, flashAlpha = 0.35, 26, 0.75
-                introRing(stage, accent, 6)
-                task.delay(0.12, function() if ShoxIntro.Running then introRing(stage, accent, 3) end end)
-                introSpark(stage, letters, 24, true, accent)
+                shoxIntroRing(stage, accent, 6)
+                task.delay(0.12, function() if ShoxIntro.Running then shoxIntroRing(stage, accent, 3) end end)
+                shoxIntroSpark(stage, letters, 24, true, accent)
             elseif kind == "end" then
                 pulse, shake, flashAlpha = 0.3, 20, 0.6
-                introRing(stage, accent, 5)
-                introSpark(stage, letters, 18, true, accent)
+                shoxIntroRing(stage, accent, 5)
+                shoxIntroSpark(stage, letters, 18, true, accent)
             else
-                introSpark(stage, letters, math.floor(4 * strength) + 2, false, accent)
+                shoxIntroSpark(stage, letters, math.floor(4 * strength) + 2, false, accent)
             end
         end
+
+        local sound = ShoxIntroSound
         local fadeStart, fadeEnd = 4.95, 5.5
-        ShoxIntroHeartbeat = RunService.Heartbeat:Connect(function(dt)
+        ShoxIntroHeartbeat = ShoxHubRunService.Heartbeat:Connect(function(dt)
             if not ShoxIntro.Running then return end
-            local sound = ShoxIntroSound
-            if sound and sound.IsPlaying then audioStarted = true; timeline = sound.TimePosition
-            elseif audioStarted then timeline = timeline + dt
-            else timeline = timeline + dt; if os.clock() - startedAt > 8 then introFinish(); return end end
+            if sound and sound.IsPlaying then
+                audioStarted = true
+                timeline = sound.TimePosition
+            elseif audioStarted then
+                timeline = timeline + dt
+            else
+                timeline = timeline + dt
+                if os.clock() - startedAt > 8 then
+                    shoxIntroFinish()
+                    return
+                end
+            end
             while ShoxIntro.Beats[beatIndex] and timeline >= ShoxIntro.Beats[beatIndex][1] do
-                fireBeat(ShoxIntro.Beats[beatIndex]); beatIndex = beatIndex + 1
+                fireBeat(ShoxIntro.Beats[beatIndex])
+                beatIndex = beatIndex + 1
             end
             local fade = math.clamp((timeline - fadeStart) / (fadeEnd - fadeStart), 0, 1)
-            pulse = pulse * math.exp(-dt * 7); shake = shake * math.exp(-dt * 9); flashAlpha = flashAlpha * math.exp(-dt * 8)
+            pulse = pulse * math.exp(-dt * 7)
+            shake = shake * math.exp(-dt * 9)
+            flashAlpha = flashAlpha * math.exp(-dt * 8)
             local shakeNow = shake > 0.3 and shake or 0
             stage.Position = UDim2.new(0.5, (math.random() - 0.5) * 2 * shakeNow, 0.5, (math.random() - 0.5) * 2 * shakeNow)
             stage.Rotation = (math.random() - 0.5) * 0.3 * shakeNow
             stageScale.Scale = base * (1 + pulse) * (1 + fade * 0.5)
             flash.BackgroundTransparency = 1 - flashAlpha
             bg.BackgroundTransparency = fade
-            for i, e in ipairs(letters) do
-                local age = timeline - e.hit
-                e.lb.TextTransparency = (timeline >= e.rev) and fade or 1
+            for i, entry in ipairs(letters) do
+                local age = timeline - entry.hit
+                entry.lb.TextTransparency = (timeline >= entry.rev) and fade or 1
                 local damp = age >= 0 and math.exp(-age * 5.5) or 0
-                e.w.Position = UDim2.new(0.5, e.x, 0.5, -10 - (age >= 0 and math.abs(math.sin(age * 12)) * 22 * damp or 0))
-                e.w.Rotation = age >= 0 and math.sin(age * 10) * 7 * damp * (i % 2 == 0 and 1 or -1) or 0
-                e.us.Scale = 1 + (age >= 0 and e.amp * math.exp(-age * 8) or 0)
+                entry.w.Position = UDim2.new(0.5, entry.x, 0.5, -10 - (age >= 0 and math.abs(math.sin(age * 12)) * 22 * damp or 0))
+                entry.w.Rotation = age >= 0 and math.sin(age * 10) * 7 * damp * (i % 2 == 0 and 1 or -1) or 0
+                entry.us.Scale = 1 + (age >= 0 and entry.amp * math.exp(-age * 8) or 0)
             end
             if timeline >= 0.84 then underline = math.min(1, underline + dt * 3.5) end
-            line.Size = UDim2.fromOffset(376 * underline, 4); line.BackgroundTransparency = fade
+            line.Size = UDim2.fromOffset(376 * underline, 4)
+            line.BackgroundTransparency = fade
             if timeline >= 3.15 then subtitleAlpha = math.min(1, subtitleAlpha + dt * 5) end
             subtitle.TextTransparency = math.max(1 - subtitleAlpha, fade)
-            skip.BackgroundTransparency = fade; skip.TextTransparency = fade
-            if timeline >= fadeEnd then introFinish() end
+            skip.BackgroundTransparency = fade
+            skip.TextTransparency = fade
+            if timeline >= fadeEnd then shoxIntroFinish() end
         end)
     end
+
+    local function shoxIntroLoadAudio()
+        local folder = ShoxIntro.MusicDir
+        pcall(function() if makefolder then makefolder(ShoxIntro.Dir) end end)
+        pcall(function() if makefolder then makefolder(folder) end end)
+        local path = folder .. "/intro.ogg"
+        local mp3Path = folder .. "/intro.mp3"
+        local assetFn = getcustomasset or getsynasset or getasset
+        if type(assetFn) == "function" and isfile then
+            for _, candidate in ipairs({path, mp3Path}) do
+                local okFile, exists = pcall(isfile, candidate)
+                if okFile and exists then
+                    local okAsset, asset = pcall(assetFn, candidate)
+                    if okAsset and type(asset) == "string" then return asset end
+                end
+            end
+        end
+        local rq = request or http_request or (syn and syn.request)
+        local body
+        if type(rq) == "function" then
+            local okReq, response = pcall(rq, {Url = ShoxIntro.IntroUrl, Method = "GET"})
+            if okReq and type(response) == "table" and response.StatusCode == 200 then body = response.Body end
+        end
+        if type(body) ~= "string" or #body < 1000 then
+            local okHttp, response = pcall(function() return game:HttpGet(ShoxIntro.IntroUrl) end)
+            if okHttp and type(response) == "string" and #response > 1000 then body = response end
+        end
+        if type(body) == "string" and #body > 1000 and writefile and type(assetFn) == "function" then
+            local extension = body:sub(1, 4) == "OggS" and "ogg" or "mp3"
+            local savePath = folder .. "/intro." .. extension
+            local okWrite = pcall(writefile, savePath, body)
+            if okWrite then
+                local okAsset, asset = pcall(assetFn, savePath)
+                if okAsset and type(asset) == "string" then return asset end
+            end
+        end
+        return nil
+    end
+
+    -- Launch (same flow as ShoxIntroLaunch(1) in the Duel script)
+    ShoxIntro.Running = true
+    ShoxIntro.Launch = ShoxIntro.Launch + 1
+    local my = ShoxIntro.Launch
+    local function dead() return (not ShoxIntro.Running) or ShoxIntro.Launch ~= my end
+
     task.spawn(function()
-        pcall(function()
-            local folder = ShoxIntro.MusicDir
-            if makefolder then makefolder(ShoxIntro.Dir) end
-            if makefolder then makefolder(folder) end
-            local assetFn = getcustomasset or getsynasset or getasset
-            local asset = nil
-            if type(assetFn) == "function" and isfile then
-                for _, candidate in ipairs({folder .. "/intro.ogg", folder .. "/intro.mp3"}) do
-                    local okFile, exists = pcall(isfile, candidate)
-                    if okFile and exists then
-                        local okAsset, a = pcall(assetFn, candidate)
-                        if okAsset and type(a) == "string" then asset = a break end
-                    end
-                end
-            end
-            if not asset then
-                local body = game:HttpGet(ShoxIntro.IntroUrl)
-                if type(body) == "string" and #body > 1000 and writefile and type(assetFn) == "function" then
-                    local ext = body:sub(1, 4) == "OggS" and "ogg" or "mp3"
-                    local path = folder .. "/intro." .. ext
-                    if pcall(writefile, path, body) then
-                        local okAsset, a = pcall(assetFn, path)
-                        if okAsset and type(a) == "string" then asset = a end
-                    end
-                end
-            end
-            if asset and ShoxIntro.Running then
-                local sound = Instance.new("Sound")
-                sound.Name = "ShoxIntroSound"
-                sound.SoundId = asset; sound.Volume = 0.6; sound.Looped = false
-                sound.Parent = SoundService; ShoxIntroSound = sound
-                pcall(function() sound:Play() end)
-            end
-        end)
-        if ShoxIntro.Running then introPlay() end
+        local asset = nil
+        pcall(function() asset = shoxIntroLoadAudio() end)
+        if dead() then return end
+        if asset then
+            local sound = Instance.new("Sound")
+            sound.Name = "ShoxCodeSniperIntroAudio"
+            sound.SoundId = asset
+            sound.Volume = 0.6
+            sound.Looped = false
+            sound.Parent = ShoxHubSoundService
+            ShoxIntroSound = sound
+            pcall(function() sound:Play() end)
+        end
+        shoxIntroPlay()
     end)
 end
 
@@ -287,8 +416,8 @@ local S = {
     spamDelay = cfgNum("spamDelay", 0.15),
     parts = {}, seen = {}, submitting = false, spamming = false,
     lastCode = nil, stamp = 0,
-    origExecute = nil, anchor = false, ragdoll = false, fps = false, autoBuy = false,
-    oldQuality = nil, oldShadows = nil,
+    origExecute = nil, eventCtl = nil, anchor = false, ragdoll = false, fps = false, autoBuy = false,
+    oldQuality = nil, oldShadows = nil, retry = nil, dead = false,
 }
 local UI = {}
 
@@ -352,7 +481,8 @@ local function makeToggleButton(parent, x, text)
     return makeBtn(parent, x, 34, 100, 46, 10, C.INACTIVE, text, 24)
 end
 
--- onChange darf false zurueckgeben, dann wird der Toggle nicht umgeschaltet
+-- onChange may return false -> toggle stays as it is.
+-- Returns a setter(state) that only re-renders (no onChange call).
 local function makeToggle(btn, fill, lbl, initial, onChange)
     local state = initial and true or false
     local function render()
@@ -370,12 +500,14 @@ local function makeToggle(btn, fill, lbl, initial, onChange)
         state = nextState
         render()
     end)
+    return function(v) state = v and true or false; render() end
 end
 
 -- =========================================================================
--- [4] WINDOW
+-- [4] WINDOW  (spawns on the RIGHT side of the screen on every execute)
 -- =========================================================================
 local FULL_HEIGHT, MIN_HEIGHT = 690, 72
+local WIN_SCALE = 0.45
 local minimized = false
 
 local guiParent = (gethui and gethui()) or game:GetService("CoreGui")
@@ -389,12 +521,12 @@ local gui = new("ScreenGui", {Name = "ShoxCodeSniper", ResetOnSpawn = false, Ign
 pcall(function() gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
 gui.Parent = guiParent
 
-local win = new("Frame", {Name = "ShoxWindow", Active = true, AnchorPoint = Vector2.new(0.5, 0.5),
+local win = new("Frame", {Name = "ShoxWindow", Active = true, AnchorPoint = Vector2.new(1, 0.5),
     BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.10, BorderSizePixel = 0,
-    Position = UDim2.new(cfgNum("guiXScale", 0.5), cfgNum("guiXOffset", 251), cfgNum("guiYScale", 0.5), cfgNum("guiYOffset", 60)),
+    Position = UDim2.new(1, -12, 0.5, 0),
     Size = UDim2.new(0, 560, 0, FULL_HEIGHT), ClipsDescendants = true}, gui)
 corner(win, 18)
-new("UIScale", {Scale = 0.45}, win)
+new("UIScale", {Scale = WIN_SCALE}, win)
 
 local body = new("Frame", {Name = "Body", BackgroundColor3 = C.BG_DARK, BackgroundTransparency = 0.35,
     BorderSizePixel = 0, Position = UDim2.new(0, 0, 0, 72), Size = UDim2.new(1, 0, 1, -72)}, win)
@@ -505,6 +637,17 @@ local function findNotificationRemote()
         local r = remoteInstancesOf(mod.Start)[1]
         if r then _G.PhiNotifyRemote = r; return r end
     end
+    -- fallback: scan the Net folder for a notification-looking remote
+    pcall(function()
+        for _, d in ipairs(ReplicatedStorage:GetDescendants()) do
+            if (d:IsA("RemoteEvent") or d:IsA("UnreliableRemoteEvent")) and d.Parent and d.Parent.Name == "Net"
+                and d.Name:lower():find("notif") then
+                _G.PhiNotifyRemote = d
+                break
+            end
+        end
+    end)
+    if _G.PhiNotifyRemote and _G.PhiNotifyRemote.Parent then return _G.PhiNotifyRemote end
     return nil
 end
 
@@ -521,12 +664,17 @@ local function clearBooleans(fn, depth)
 end
 
 local function fireConnections(signal, ...)
-    if not getconnections_ then return false end
-    local ok, conns = pcall(getconnections_, signal)
-    if not ok or type(conns) ~= "table" or #conns == 0 then return false end
     local args = table.pack(...)
+    local ok, list
+    if getconnections_ then ok, list = pcall(getconnections_, signal) end
+    if not ok or type(list) ~= "table" or #list == 0 then
+        if firesignal_ then
+            return (pcall(firesignal_, signal, table.unpack(args, 1, args.n)))
+        end
+        return false
+    end
     local any = false
-    for _, c in ipairs(conns) do
+    for _, c in ipairs(list) do
         if c.Enabled ~= false then
             local cb
             pcall(function() cb = c.Function end)
@@ -690,12 +838,15 @@ local function feedAdd(text, code)
     if code then
         local codeRow = new("Frame", {Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1, LayoutOrder = 2}, card)
         local codeLbl = new("TextLabel", {Size = UDim2.new(0.7, -3, 1, 0), BackgroundColor3 = C.BG_INPUT, Text = code,
-            TextColor3 = C.ACTIVE, FontFace = FH, TextSize = 14}, codeRow)
+            BorderSizePixel = 0, TextColor3 = C.ACTIVE, FontFace = FH, TextSize = 14}, codeRow)
         corner(codeLbl, 6)
         local useBtn = new("TextButton", {Size = UDim2.new(0.3, -3, 1, 0), Position = UDim2.new(0.7, 3, 0, 0),
-            BackgroundColor3 = C.ACTIVE, Text = "USE", TextColor3 = C.TEXT_ON, FontFace = FH, TextSize = 14}, codeRow)
+            BorderSizePixel = 0, BackgroundColor3 = C.ACTIVE, Text = "USE", TextColor3 = C.TEXT_ON, FontFace = FH, TextSize = 14}, codeRow)
         corner(useBtn, 6)
-        useBtn.MouseButton1Click:Connect(function() task.spawn(submitCodeAdvanced, code) end)
+        useBtn.MouseButton1Click:Connect(function()
+            S.lastCode = code
+            task.spawn(submitCodeAdvanced, code)
+        end)
     end
     feedEntries[#feedEntries + 1] = card
     if #feedEntries > 36 then
@@ -707,6 +858,18 @@ end
 -- =========================================================================
 -- [10] PIPELINE
 -- =========================================================================
+local function playPing()
+    if not S.soundsOn then return end
+    pcall(function()
+        local s = Instance.new("Sound")
+        s.SoundId = "rbxasset://sounds/electronicpingshort.wav"
+        s.Volume = 0.7
+        s.Parent = SoundService
+        s:Play()
+        Debris:AddItem(s, 3)
+    end)
+end
+
 local function setStatus(msg, kind)
     UI.status.Text = "Redeemer: " .. tostring(msg or "")
     UI.status.TextColor3 = (kind == "ok") and C.TEXT or C.TEXT_MUTED
@@ -730,15 +893,31 @@ local function setRunning(value)
     end
 end
 
-local function submitCapturedCode(code)
+local runSpam -- defined in [11]
+
+local function submitCapturedCode(code, partsList)
     if not code or code == "" then return end
     if S.seen[code] or S.submitting then return end
     S.seen[code] = true
     task.delay(2, function() S.seen[code] = nil end)
-    S.submitting = true
     S.lastCode = code
     S.stamp = os.clock()
     local stamp = S.stamp
+    playPing()
+
+    -- Auto Type OFF: only show the code, user presses USE in the Feed
+    if not S.autoTypeOn then
+        setRunning(false)
+        UI.codeLabel.Text = code
+        setStatus("caught: " .. code, "ok")
+        feedAdd("Code caught (Auto Type off)", code)
+        task.delay(3, function()
+            if S.stamp == stamp then UI.codeLabel.Text = "Code Will Show Here" end
+        end)
+        return
+    end
+
+    S.submitting = true
     UI.codeLabel.Text = "Redeeming..."
     setStatus("redeeming: " .. code, "busy")
     local ok = submitCodeAdvanced(code)
@@ -746,6 +925,14 @@ local function submitCapturedCode(code)
     setRunning(false)
     if ok then setStatus("sent: " .. code, "ok") else setStatus("failed: " .. code, "err") end
     feedAdd(ok and "Code sent" or "Code failed", code)
+
+    -- Redeem 3 if 4 wrong: remember the 3-word version, use it if the game says "wrong"
+    if ok and S.redeem3On and partsList and #partsList == 4 then
+        S.retry = {code = partsList[1] .. partsList[2] .. partsList[3], untilT = os.clock() + 3}
+    end
+    -- Spam on Listen: spam the fresh code for a few seconds
+    if ok and S.spamOnListen and runSpam then runSpam(4) end
+
     task.delay(3, function()
         if S.stamp == stamp then UI.codeLabel.Text = "Code Will Show Here" end
     end)
@@ -757,9 +944,10 @@ local function captureWord(word)
     UI.progress.Text = #S.parts .. "/" .. getWordCount()
     UI.codeLabel.Text = table.concat(S.parts)
     if #S.parts >= getWordCount() then
-        local code = table.concat(S.parts)
+        local list = S.parts
+        local code = table.concat(list)
         S.parts = {}
-        submitCapturedCode(code)
+        submitCapturedCode(code, list)
     end
 end
 
@@ -772,12 +960,47 @@ local function detectTrigger(text)
     return false, text
 end
 
+local FAIL_WORDS = {"invalid", "wrong", "incorrect", "not valid", "expired", "already", "doesn't exist", "does not exist"}
+local SYSTEM_WORDS = {"joined the", "left the", "has joined", "has left", "server", "event", "restart", "shutdown", "spawned"}
+
+local function hasAny(lower, list)
+    for _, w in ipairs(list) do
+        if lower:find(w, 1, true) then return true end
+    end
+    return false
+end
+
+-- Word Mode ON: every notification counts as ONE word (spaces/symbols removed)
+local function feedWords(str)
+    if S.wordMode then
+        local w = (str:gsub("[^%w_]", ""))
+        if w ~= "" then captureWord(w) end
+    else
+        for word in str:gmatch("[%w_]+") do captureWord(word) end
+    end
+end
+
 local function processText(text)
     local lower = text:lower()
+
+    if S.retry then
+        if os.clock() > S.retry.untilT then
+            S.retry = nil
+        elseif hasAny(lower, FAIL_WORDS) then
+            local c = S.retry.code
+            S.retry = nil
+            feedAdd("4 words wrong, trying 3 words", c)
+            S.submitting = false
+            submitCapturedCode(c, nil)
+            return
+        end
+    end
+
     if lower:find("?", 1, true) or lower:find("riddle", 1, true) then
         feedAdd(text, nil)
         return
     end
+
     local triggered, remainder = detectTrigger(text)
     if triggered then
         if not S.running then
@@ -786,24 +1009,27 @@ local function processText(text)
         end
         S.parts = {}
         UI.codeLabel.Text = ""
-        for word in remainder:gmatch("[%w_]+") do captureWord(word) end
-    elseif S.running then
-        for word in text:gmatch("[%w_]+") do captureWord(word) end
+        feedWords(remainder)
     else
-        feedAdd(text, nil)
+        if S.ignoreSystem and hasAny(lower, SYSTEM_WORDS) then
+            local wc = select(2, text:gsub("%S+", ""))
+            if not S.running or wc > 6 then return end
+        end
+        if S.running then feedWords(text) else feedAdd(text, nil) end
     end
 end
 
 task.spawn(function()
     local remote
-    for _ = 1, 40 do
+    for _ = 1, 120 do
+        if S.dead then return end
         remote = findNotificationRemote()
         if remote then break end
         task.wait(0.5)
     end
     if not remote then setStatus("Notification remote not found", "err"); return end
     local ok = pcall(function()
-        remote.OnClientEvent:Connect(function(...)
+        track(remote.OnClientEvent:Connect(function(...)
             local text
             for _, a in ipairs({...}) do
                 if type(a) == "string" then text = a; break end
@@ -812,7 +1038,7 @@ task.spawn(function()
             text = stripTags(text):match("^%s*(.-)%s*$") or ""
             if text == "" then return end
             pcall(processText, text)
-        end)
+        end))
     end)
     if not ok then setStatus("Listener failed", "err") end
 end)
@@ -820,24 +1046,35 @@ end)
 -- =========================================================================
 -- [11] TOGGLE WIRING
 -- =========================================================================
-makeToggle(UI.spamBtn, UI.spamFill, UI.spamLbl, false, function(v)
-    if v and not S.lastCode then setStatus("No code yet", "err"); return false end
-    S.spamming = v
+function runSpam(duration)
+    if S.spamming or not S.lastCode then return end
+    S.spamming = true
+    if UI.setSpam then UI.setSpam(true) end
+    task.spawn(function()
+        local untilT = duration and (os.clock() + duration)
+        while S.spamming and not S.dead and S.lastCode and (not untilT or os.clock() < untilT) do
+            submitCodeAdvanced(S.lastCode)
+            task.wait(S.spamDelay)
+        end
+        S.spamming = false
+        if UI.setSpam then UI.setSpam(false) end
+    end)
+end
+
+UI.setSpam = makeToggle(UI.spamBtn, UI.spamFill, UI.spamLbl, false, function(v)
     if v then
-        task.spawn(function()
-            while S.spamming and S.lastCode do
-                submitCodeAdvanced(S.lastCode)
-                task.wait(S.spamDelay)
-            end
-            S.spamming = false
-        end)
+        if not S.lastCode then setStatus("No code yet", "err"); return false end
+        runSpam()
+    else
+        S.spamming = false
     end
 end)
 
 makeToggle(UI.evtBtn, UI.evtFill, UI.evtLbl, false, function(v)
     local ok = pcall(function()
         local controllers = ReplicatedStorage:FindFirstChild("Controllers")
-        local ec = require(controllers:FindFirstChild("EventController"))
+        local ec = S.eventCtl or require(controllers:FindFirstChild("EventController", true))
+        S.eventCtl = ec
         if v then
             if not S.origExecute then S.origExecute = ec.Execute end
             ec.Execute = function() return false end
@@ -867,7 +1104,10 @@ end
 
 do
     local defs = {
-        {"Auto Buy", function(v) S.autoBuy = v end},
+        {"Auto Buy", function(v)
+            if v then setStatus("Auto Buy: not available yet", "err"); return false end
+            S.autoBuy = false
+        end},
         {"Anchor", function(v) S.anchor = v; applyAnchor(v) end},
         {"Anti Ragdoll", function(v) S.ragdoll = v; applyRagdoll(v) end},
         {"FPS Boost", function(v)
@@ -892,24 +1132,25 @@ do
     end
 end
 
-player.CharacterAdded:Connect(function()
+track(player.CharacterAdded:Connect(function()
     task.wait(1)
     if S.anchor then applyAnchor(true) end
     if S.ragdoll then applyRagdoll(true) end
-end)
+end))
 
 UI.startBtn.MouseButton1Click:Connect(function() setRunning(not S.running) end)
-UIS.InputBegan:Connect(function(input, processed)
+track(UIS.InputBegan:Connect(function(input, processed)
     if processed then return end
     if input.KeyCode == Enum.KeyCode.F then setRunning(not S.running) end
-end)
+end))
 
 -- =========================================================================
 -- [12] HUD BUTTON & DRAGGING
 -- =========================================================================
 do
+    -- HUD button sits right next to the window (left of it), also on the right side
     local hud = new("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
-        Position = UDim2.new(1, -50, 0.3, 0), Size = UDim2.new(0, 89, 0, 89), ZIndex = 10}, gui)
+        Position = UDim2.new(1, -296, 0.5, 0), Size = UDim2.new(0, 89, 0, 89), ZIndex = 10}, gui)
     new("UIScale", {Scale = 0.5}, hud)
     local toggle = new("TextButton", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
         Position = UDim2.new(0.5, 0, 0.5, 0), Size = UDim2.new(0, 89, 0, 89), AutoButtonColor = false, Text = ""}, hud)
@@ -933,19 +1174,16 @@ do
                 if input.UserInputState == Enum.UserInputState.End then
                     drag.active = false
                     if conn then conn:Disconnect() end
-                    cfgSet("guiXScale", win.Position.X.Scale); cfgSet("guiXOffset", win.Position.X.Offset)
-                    cfgSet("guiYScale", win.Position.Y.Scale); cfgSet("guiYOffset", win.Position.Y.Offset)
-                    saveConfig()
                 end
             end)
         end
     end)
-    UIS.InputChanged:Connect(function(input)
+    track(UIS.InputChanged:Connect(function(input)
         if drag.active and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local d = input.Position - drag.start
             win.Position = UDim2.new(drag.pos.X.Scale, drag.pos.X.Offset + d.X, drag.pos.Y.Scale, drag.pos.Y.Offset + d.Y)
         end
-    end)
+    end))
 end
 
 -- =========================================================================
@@ -953,4 +1191,15 @@ end
 -- =========================================================================
 selectTab("Redeemer")
 setRunning(false)
+
+genv.__ShoxSniperCleanup = function()
+    S.dead = true
+    S.spamming = false
+    for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+    if S.eventCtl and S.origExecute then pcall(function() S.eventCtl.Execute = S.origExecute end) end
+    pcall(shoxIntroFinish)
+    if gui then pcall(function() gui:Destroy() end) end
+end
+
 print("[Shox] Code Sniper loaded")
+
