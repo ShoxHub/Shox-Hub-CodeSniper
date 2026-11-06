@@ -1,4 +1,4 @@
--- Shox Hub Code Sniper | v1.6 (source-bound detection + safer UI matching)
+-- Shox Hub Code Sniper | v1.8 (local tester + two-pass auto redeem)
 local S = {
 	Players = game:GetService("Players"),
 	UIS = game:GetService("UserInputService"),
@@ -12,7 +12,7 @@ if env.CodeSniperStop then pcall(env.CodeSniperStop) end
 
 local function RGB(r, g, b) return Color3.fromRGB(r, g, b) end
 local CS = {
-	Version = "v1.7",
+	Version = "v1.8",
 	RedeemState = "idle",
 	Running = true,
 	Open = true,
@@ -43,7 +43,7 @@ local CS = {
 	Discord = "https://discord.gg/EA7xS26mA9",
 	IntroUrl = "https://files.catbox.moe/ocdxaf.ogg",
 	Settings = {
-		SafeMode = true, Sniper = false, Theme = "Black", Scale = 2, Trans = 1, Intro = true,
+		Sniper = false, Theme = "Black", Scale = 2, Trans = 1, Intro = true,
 		FragmentDelay = 2, AutoSubmit = false, UseNotify = true,
 	},
 	Scales = { 0.85, 1, 1.2 },
@@ -100,7 +100,7 @@ CS.load = function()
 		end
 	end)
 	-- Older config files predate the safer Auto Submit default.
-	if configVersion ~= 2 then CS.Settings.AutoSubmit = false end
+	if configVersion ~= 4 then CS.Settings.AutoSubmit = false end
 	if not CS.Themes[CS.Settings.Theme] then CS.Settings.Theme = "Black" end
 	if not CS.Scales[CS.Settings.Scale] then CS.Settings.Scale = 2 end
 	if not CS.Trans[CS.Settings.Trans] then CS.Settings.Trans = 1 end
@@ -113,7 +113,7 @@ CS.save = function()
 		if writefile then
 			local data = {}
 			for key, value in pairs(CS.Settings) do data[key] = value end
-			data.ConfigVersion = 3
+			data.ConfigVersion = 4
 			writefile(CS.File, S.Http:JSONEncode(data))
 		end
 	end)
@@ -161,7 +161,7 @@ CS.updateStatus = function()
 	if not U.status then return end
 	local isArmed = CS.armed()
 	local state = CS.Settings.Sniper and (isArmed and "Armed" or "Listening") or "Sniper off"
-	local mode = CS.Testing and "LOCAL TEST: no game action" or (CS.Settings.SafeMode and "SAFE: types code, no submit" or "LIVE: types + submits")
+	local mode = CS.Testing and "LOCAL TEST: no game action" or (CS.Settings.AutoSubmit and "AUTO REDEEM: 2 attempts" or "DETECT ONLY")
 	local redeem = ({
 		idle = "No redeem action",
 		recognized = "Code recognized (not entered)",
@@ -172,11 +172,11 @@ CS.updateStatus = function()
 	U.status.Text = state .. " | " .. mode .. "\nFragments " .. #CS.Buffer .. " | Last: " .. (CS.LastCode or "-") .. "\n" .. redeem
 	if U.dot then
 		if not CS.Settings.Sniper then
-			U.dot.BackgroundColor3 = RGB(150, 150, 150)
+			U.dot.BackgroundColor3 = RGB(190, 190, 190)
 		elseif isArmed then
-			U.dot.BackgroundColor3 = RGB(80, 220, 120)
+			U.dot.BackgroundColor3 = RGB(205, 205, 205)
 		else
-			U.dot.BackgroundColor3 = RGB(255, 170, 40)
+			U.dot.BackgroundColor3 = RGB(105, 105, 105)
 		end
 	end
 end
@@ -236,14 +236,12 @@ CS.refresh = function()
 		btn.TextColor3 = T.text
 	end
 	CS.setToggle(U.sniper, "Sniper", CS.Settings.Sniper)
-	CS.setToggle(U.safe, "Safe Mode", CS.Settings.SafeMode)
-	CS.setToggle(U.auto, "Auto Submit", CS.Settings.AutoSubmit)
+	CS.setToggle(U.auto, "Auto Redeem x2", CS.Settings.AutoSubmit)
 	CS.setToggle(U.notify, "Detect", CS.Settings.UseNotify)
 	U.words.Text = "Wait: " .. string.format("%.1fs", CS.FragmentDelays[CS.Settings.FragmentDelay])
 	U.trans.Text = "Opacity: " .. math.floor((1 - CS.Trans[CS.Settings.Trans]) * 100 + 0.5) .. "%"
 	U.size.Text = "Size: " .. CS.ScaleNames[CS.Settings.Scale]
-	U.theme.Text = "Theme: " .. CS.Settings.Theme
-	U.intro.Text = "Intro: " .. (CS.Settings.Intro and "ON" or "OFF")
+		U.intro.Text = "Intro: " .. (CS.Settings.Intro and "ON" or "OFF")
 	U.console.BackgroundColor3 = T.panel
 	U.console.TextColor3 = T.text
 	U.status.TextColor3 = T.sub
@@ -251,36 +249,11 @@ CS.refresh = function()
 	U.manual.TextColor3 = T.text
 	U.manual.PlaceholderColor3 = T.sub
 	if testInput then testInput.BackgroundColor3 = T.panel testInput.TextColor3 = T.text testInput.PlaceholderColor3 = T.sub end
-	for _, entry in ipairs(U.ddItems) do
-		local selected = entry[3] == CS.Settings.Theme
-		CS.tw(entry[2], { Thickness = selected and 3 or 1 }, 0.3)
-	end
-	U.fab.BackgroundColor3 = T.accent
+		U.fab.BackgroundColor3 = T.accent
 	U.fab.BackgroundTransparency = CS.Trans[CS.Settings.Trans]
 	U.fab.TextColor3 = T.bg
 	U.fabStroke.Color = T.text
 	CS.updateStatus()
-end
-
-CS.DDH = math.ceil(#CS.ThemeOrder / 2) * 32 + 8
-
-CS.setDD = function(open)
-	CS.ddOpen = open
-	CS.tw(U.dd, { Size = UDim2.new(1, 0, 0, open and CS.DDH or 0) }, open and 0.5 or 0.3)
-	for i, entry in ipairs(U.ddItems) do
-		local item, stroke = entry[1], entry[2]
-		if open then
-			item.BackgroundTransparency = 1
-			item.TextTransparency = 1
-			stroke.Transparency = 1
-		end
-		task.delay(open and i * 0.05 or 0, function()
-			if not CS.Running then return end
-			local value = open and 0 or 1
-			CS.tw(item, { BackgroundTransparency = value, TextTransparency = value }, 0.3)
-			CS.tw(stroke, { Transparency = value }, 0.3)
-		end)
-	end
 end
 
 CS.drag = function(handle, target, onTap)
@@ -338,7 +311,7 @@ CS.introFx = function(snd)
 	CS.introG = ig
 	local vp = workspace.CurrentCamera.ViewportSize
 	local base = math.clamp(math.min(vp.X * 0.6 / 376, vp.Y * 0.4 / 80), 0.5, 3)
-	local bg = mk("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = T.bg, BackgroundTransparency = 1, BorderSizePixel = 0 }, ig)
+	local bg = mk("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = RGB(0, 0, 0), BackgroundTransparency = 1, BorderSizePixel = 0 }, ig)
 	tw(bg, { BackgroundTransparency = 0 }, 0.3)
 	local stage = mk("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0 }, ig)
 	local sc = mk("UIScale", { Scale = base }, stage)
@@ -755,31 +728,27 @@ CS.redeem = function(code, submit)
 end
 
 -- Runs instantly in the same frame (no task.spawn, no wait)
-CS.submit = function(code, source, force)
+CS.submit = function(code, source, force, repeatAttempt)
 	code = tostring(code or ""):gsub("%s+", "")
-	if code == "" then return end
+	if code == "" then return false end
 	local now = os.clock()
-	local live = not CS.Settings.SafeMode
-	-- Manual submit intentionally bypasses the 30 s automatic Recent guard;
-	-- it still has a separate 2 s click throttle.
-	if force then
+	local live = true -- Safe Mode UI removed; Auto Redeem is the explicit opt-in.
+	if force and not repeatAttempt then
 		CS.ManualLastCode = CS.ManualLastCode or {}
 		local lastSame = CS.ManualLastCode[code]
 		if lastSame and now - lastSame < 10 then
 			CS.log("Same code manual submit throttled (10s)")
-			return
+			return false
 		end
-		if CS.LastManualAt and now - CS.LastManualAt < 2 then return end
+		if CS.LastManualAt and now - CS.LastManualAt < 2 then return false end
 		CS.ManualLastCode[code] = now
 		CS.LastManualAt = now
-	elseif live and CS.Recent[code] and now - CS.Recent[code] < 30 then
-		return
+	elseif not force and not repeatAttempt then
+		-- Each separately detected announcement gets its own two-attempt cycle.
 	end
 	CS.LastCode = code
 	local callOk, succeeded, state, detail = pcall(CS.redeem, code, live)
-	if not callOk then
-		succeeded, state, detail = false, "error", tostring(succeeded)
-	end
+	if not callOk then succeeded, state, detail = false, "error", tostring(succeeded) end
 	if succeeded and state == "typed" then
 		CS.RedeemState = "typed"
 	elseif live and succeeded and state == "unverified" then
@@ -789,13 +758,14 @@ CS.submit = function(code, source, force)
 	end
 	CS.log("Code recognized: " .. code .. " (" .. tostring(source) .. ")")
 	if CS.RedeemState == "typed" then
-		CS.log("Code entered in the visible game box; redemption not confirmed")
+		CS.log("Code entered; redemption not confirmed")
 	elseif CS.RedeemState == "unverified" then
 		CS.log("Redeem activation requested; game acceptance not confirmed")
 	else
 		CS.log("Code entry/activation unavailable: " .. tostring(detail or state))
 	end
 	CS.updateStatus()
+	return succeeded
 end
 
 -- Resolve the nearest notification/announcement container shared by sibling labels.
@@ -825,11 +795,19 @@ CS.deliver = function(code)
 		CS.RedeemState = "recognized"
 		CS.log("LOCAL TEST PASS: " .. code .. " (no game UI / no server action)")
 	elseif CS.Settings.AutoSubmit then
-		CS.submit(code, "announcement", false)
+		CS.AutoAttemptToken = (CS.AutoAttemptToken or 0) + 1
+		local attemptToken = CS.AutoAttemptToken
+		CS.log("Auto Redeem: starting 2 attempts for " .. code)
+		CS.submit(code, "announcement attempt 1", false, false)
+		task.delay(0.8, function()
+			if CS.Running and CS.Settings.AutoSubmit and CS.AutoAttemptToken == attemptToken then
+				CS.submit(code, "announcement attempt 2", false, true)
+			end
+		end)
 	else
 		CS.LastCode = code
 		CS.RedeemState = "recognized"
-		CS.log("Code ready: " .. code .. " (Auto Submit OFF)")
+		CS.log("Code ready: " .. code .. " (Auto Redeem OFF)")
 	end
 	CS.updateStatus()
 end
@@ -1113,23 +1091,23 @@ pcall(function() if syn and syn.protect_gui then syn.protect_gui(U.gui) end end)
 U.gui.Parent = CS.getParent()
 
 U.main = CS.make("Frame", {
-	Size = UDim2.new(0, 300, 0, 320), Position = UDim2.new(0.5, -150, 0.5, -160),
+	Size = UDim2.new(0, 340, 0, 430), Position = UDim2.new(0.5, -170, 0.5, -215),
 	BorderSizePixel = 0, ClipsDescendants = true,
 }, U.gui)
 CS.make("UICorner", { CornerRadius = UDim.new(0, 12) }, U.main)
-U.stroke = CS.make("UIStroke", { Thickness = 2 }, U.main)
-U.grad = CS.make("UIGradient", { Rotation = 0 }, U.stroke)
+U.stroke = CS.make("UIStroke", { Thickness = 1.2, Color = RGB(220, 220, 220), Transparency = 0.25 }, U.main)
+U.grad = CS.make("UIGradient", { Rotation = 0, Enabled = false }, U.stroke)
 U.scale = CS.make("UIScale", { Scale = CS.Scales[CS.Settings.Scale] * 0.85 }, U.main)
 
-U.titleBar = CS.make("Frame", { Size = UDim2.new(1, 0, 0, 38), BorderSizePixel = 0 }, U.main)
+U.titleBar = CS.make("Frame", { Size = UDim2.new(1, 0, 0, 44), BorderSizePixel = 0 }, U.main)
 U.dot = CS.make("Frame", {
 	Size = UDim2.fromOffset(10, 10), Position = UDim2.new(0, 12, 0.5, -5),
-	BackgroundColor3 = RGB(150, 150, 150), BorderSizePixel = 0,
+	BackgroundColor3 = RGB(190, 190, 190), BorderSizePixel = 0,
 }, U.titleBar)
 CS.make("UICorner", { CornerRadius = UDim.new(1, 0) }, U.dot)
 U.title = CS.make("TextLabel", {
-	Size = UDim2.new(1, -112, 1, 0), Position = UDim2.new(0, 30, 0, 0), BackgroundTransparency = 1,
-	Text = "Shox Hub Code Sniper " .. CS.Version, Font = Enum.Font.GothamBlack, TextSize = 14, Active = true,
+	Size = UDim2.new(1, -112, 1, 0), Position = UDim2.new(0, 18, 0, 0), BackgroundTransparency = 1,
+	Text = "SHOX HUB  /  " .. CS.Version, Font = Enum.Font.GothamBlack, TextSize = 14, Active = true,
 	TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
 }, U.titleBar)
 U.minBtn = CS.make("TextButton", {
@@ -1142,16 +1120,15 @@ U.closeBtn = CS.make("TextButton", {
 }, U.titleBar)
 
 U.content = CS.make("ScrollingFrame", {
-	Size = UDim2.new(1, -16, 1, -48), Position = UDim2.new(0, 8, 0, 44), BackgroundTransparency = 1,
+	Size = UDim2.new(1, -20, 1, -56), Position = UDim2.new(0, 10, 0, 50), BackgroundTransparency = 1,
 	BorderSizePixel = 0, ScrollBarThickness = 3, CanvasSize = UDim2.new(0, 0, 0, 0),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 }, U.main)
 CS.make("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, U.content)
 CS.make("UIPadding", { PaddingRight = UDim.new(0, 6), PaddingBottom = UDim.new(0, 8) }, U.content)
 
-local modeRow = CS.row(34)
-U.sniper = CS.button(modeRow, "", 1, 2)
-U.safe = CS.button(modeRow, "", 2, 2)
+local modeRow = CS.row(38)
+U.sniper = CS.button(modeRow, "", 1, 1)
 local wordRow = CS.row(34)
 U.words = CS.button(wordRow, "", 1, 2)
 U.auto = CS.button(wordRow, "", 2, 2)
@@ -1204,43 +1181,9 @@ local optRow1 = CS.row(34)
 U.trans = CS.button(optRow1, "", 1, 2)
 U.size = CS.button(optRow1, "", 2, 2)
 local optRow2 = CS.row(34)
-U.theme = CS.button(optRow2, "", 1, 2)
-U.intro = CS.button(optRow2, "", 2, 2)
-
-U.dd = CS.row(0)
-U.dd.ClipsDescendants = true
-CS.make("UIPadding", {
-	PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4),
-	PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4),
-}, U.dd)
-for idx, name in ipairs(CS.ThemeOrder) do
-	local palette = CS.Themes[name]
-	local col, rw = (idx - 1) % 2, (idx - 1) // 2
-	local full = (idx == #CS.ThemeOrder and #CS.ThemeOrder % 2 == 1)
-	local item = CS.make("TextButton", {
-		Text = name,
-		Position = full and UDim2.new(0, 0, 0, rw * 32) or UDim2.new(col * 0.5, col == 1 and 3 or 0, 0, rw * 32),
-		Size = full and UDim2.new(1, 0, 0, 26) or UDim2.new(0.5, -3, 0, 26),
-		BackgroundColor3 = palette.bg, TextColor3 = palette.accent, Font = Enum.Font.GothamBold,
-		TextSize = 12, AutoButtonColor = false, BorderSizePixel = 0,
-	}, U.dd)
-	CS.make("UICorner", { CornerRadius = UDim.new(0, 8) }, item)
-	local press = CS.make("UIScale", { Scale = 1 }, item)
-	local stroke = CS.make("UIStroke", { Color = palette.accent, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, item)
-	U.ddItems[idx] = { item, stroke, name }
-	CS.on(item.InputBegan, function(input) if CS.isIn(input) then CS.tw(press, { Scale = 0.94 }, 0.08) end end)
-	CS.on(item.InputEnded, function(input) if CS.isIn(input) then CS.tw(press, { Scale = 1 }, 0.3, Enum.EasingStyle.Back) end end)
-	CS.on(item.MouseButton1Click, function()
-		CS.Settings.Theme = name
-		CS.refresh()
-		CS.save()
-		CS.setDD(false)
-		CS.log("Theme: " .. name)
-	end)
-end
+U.intro = CS.button(optRow2, "", 1, 1)
 
 U.discord = CS.button(CS.row(34), "Copy Discord Link", 1, 1)
-U.quit = CS.button(CS.row(34), "Exit", 1, 1)
 
 U.fab = CS.make("TextButton", {
 	Size = UDim2.new(0, 48, 0, 48), Position = UDim2.new(0, 16, 0.5, -24), Text = "CS",
@@ -1278,13 +1221,6 @@ CS.on(U.sniper.MouseButton1Click, function()
 	end
 	CS.updateStatus()
 end)
-CS.on(U.safe.MouseButton1Click, function()
-	CS.Settings.SafeMode = not CS.Settings.SafeMode
-	CS.setToggle(U.safe, "Safe Mode", CS.Settings.SafeMode)
-	CS.save()
-	CS.log(CS.Settings.SafeMode and "Safe Mode ON: code is typed, not sent" or "Safe Mode OFF: code is typed + sent")
-	CS.updateStatus()
-end)
 CS.on(U.words.MouseButton1Click, function()
 	CS.Settings.FragmentDelay = CS.Settings.FragmentDelay % #CS.FragmentDelays + 1
 	CS.Buffer = {}
@@ -1295,9 +1231,10 @@ CS.on(U.words.MouseButton1Click, function()
 end)
 CS.on(U.auto.MouseButton1Click, function()
 	CS.Settings.AutoSubmit = not CS.Settings.AutoSubmit
-	CS.setToggle(U.auto, "Auto Submit", CS.Settings.AutoSubmit)
+	if not CS.Settings.AutoSubmit then CS.AutoAttemptToken = (CS.AutoAttemptToken or 0) + 1 end
+	CS.setToggle(U.auto, "Auto Redeem x2", CS.Settings.AutoSubmit)
 	CS.save()
-	CS.log(CS.Settings.AutoSubmit and "Auto Submit ON: after fragment collection" or "Auto Submit OFF: use Submit Last")
+	CS.log(CS.Settings.AutoSubmit and "Auto Redeem x2 ON" or "Auto Redeem x2 OFF")
 end)
 CS.on(U.notify.MouseButton1Click, function()
 	CS.Settings.UseNotify = not CS.Settings.UseNotify
@@ -1368,7 +1305,6 @@ CS.on(U.size.MouseButton1Click, function()
 	CS.refresh()
 	CS.save()
 end)
-CS.on(U.theme.MouseButton1Click, function() CS.setDD(not CS.ddOpen) end)
 CS.on(U.intro.MouseButton1Click, function()
 	CS.Settings.Intro = not CS.Settings.Intro
 	CS.refresh()
@@ -1390,11 +1326,10 @@ CS.on(U.discord.MouseButton1Click, function()
 end)
 CS.on(U.minBtn.MouseButton1Click, function() CS.setOpen(false) end)
 CS.on(U.closeBtn.MouseButton1Click, CS.stop)
-CS.on(U.quit.MouseButton1Click, CS.stop)
 
 CS.on(S.RS.Heartbeat, function(dt)
 	if not CS.Running then return end
-	U.grad.Rotation = (U.grad.Rotation + dt * (CS.Settings.Sniper and 90 or 40)) % 360
+	U.grad.Rotation = 0
 	local pulse = (math.sin(os.clock() * 4) + 1) / 2
 	U.dot.BackgroundTransparency = CS.Settings.Sniper and (0.5 * (1 - pulse)) or 0.4
 	CS.Tick = CS.Tick + dt
@@ -1419,8 +1354,8 @@ CS.on(S.RS.Heartbeat, function(dt)
 end)
 
 CS.refresh()
-CS.log("Shox Hub Code Sniper " .. CS.Version .. " loaded")
-CS.log("Safe Mode: " .. (CS.Settings.SafeMode and "ON (types, no send)" or "OFF (types + sends)"))
+CS.log("SHOX HUB  /  " .. CS.Version .. " loaded")
+CS.log("Auto Redeem x2: " .. (CS.Settings.AutoSubmit and "ON" or "OFF"))
 CS.setOpen(true)
 task.spawn(function() pcall(CS.hookGui) end)
 
