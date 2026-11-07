@@ -664,15 +664,10 @@ local function clearBooleans(fn, depth)
 end
 
 local function fireConnections(signal, ...)
+    if not getconnections_ then return false end
+    local ok, list = pcall(getconnections_, signal)
+    if not ok or type(list) ~= "table" or #list == 0 then return false end
     local args = table.pack(...)
-    local ok, list
-    if getconnections_ then ok, list = pcall(getconnections_, signal) end
-    if not ok or type(list) ~= "table" or #list == 0 then
-        if firesignal_ then
-            return (pcall(firesignal_, signal, table.unpack(args, 1, args.n)))
-        end
-        return false
-    end
     local any = false
     for _, c in ipairs(list) do
         if c.Enabled ~= false then
@@ -688,49 +683,79 @@ local function fireConnections(signal, ...)
     return any
 end
 
+-- Same lookup as the working Redeemer: Codes > Main > TextBox / Confirm
 local function findCodeBox()
     local codes = playerGui:FindFirstChild("Codes")
     if not codes then return nil end
-    local redeem = codes:FindFirstChild("CodeRedeem", true)
-    if redeem then
-        if redeem:IsA("TextBox") then return redeem end
-        local tb = redeem:FindFirstChildWhichIsA("TextBox", true)
-        if tb then return tb end
+    local main = (codes:FindFirstChild("Codes") or codes):FindFirstChild("Main")
+    local box = main and main:FindFirstChild("TextBox")
+    if box and box:IsA("TextBox") then return box end
+    for _, d in ipairs(codes:GetDescendants()) do
+        if d:IsA("TextBox") then return d end
     end
-    return codes:FindFirstChildWhichIsA("TextBox", true)
+    return nil
 end
 
 local function findConfirmButton()
     local codes = playerGui:FindFirstChild("Codes")
     if not codes then return nil end
+    local codes2 = codes:FindFirstChild("Codes") or codes
+    local confirm = (codes2:FindFirstChild("Main") or codes2):FindFirstChild("Confirm")
+    if confirm and (confirm:IsA("ImageButton") or confirm:IsA("TextButton")) then
+        return confirm
+    end
+    local fallback
     for _, d in ipairs(codes:GetDescendants()) do
         if d:IsA("ImageButton") or d:IsA("TextButton") then
             local n = d.Name:lower()
-            local t = d:IsA("TextButton") and d.Text:lower() or ""
-            if n:find("submit") or n:find("confirm") or n:find("redeem") or n:find("enter") or t:find("submit") then
+            if n:find("confirm") or n:find("submit") or n:find("redeem") or n:find("enter") then
                 return d
             end
+            fallback = fallback or d
         end
     end
-    return nil
+    return fallback
 end
 
+local function submitOnce(text)
+    local box = findCodeBox()
+    if not box then return false, "code box not found" end
+    pcall(function()
+        box.Text = text
+        box.Active = true
+        box.Selectable = true
+    end)
+
+    if getconnections_ then
+        local confirm = findConfirmButton()
+        local ok = false
+        if confirm then
+            local a = fireConnections(confirm.MouseButton1Click)
+            local b = fireConnections(confirm.Activated)
+            ok = a or b or false
+        end
+        if not ok then
+            ok = fireConnections(box.FocusLost, true) or ok
+        end
+        if not ok and firesignal_ and confirm then
+            ok = (pcall(firesignal_, confirm.MouseButton1Click)) or (pcall(firesignal_, confirm.Activated))
+        end
+        return ok, ok and "submitted" or "no submit control"
+    end
+
+    -- no getconnections: classic focus release
+    if not pcall(function() box:CaptureFocus() end) then return false, "focus failed" end
+    task.wait(0.1)
+    local ok = pcall(function() box:ReleaseFocus(true) end)
+    return ok, ok and "submitted" or "release failed"
+end
+
+-- never throws, never hangs the pipeline
 local function submitCodeAdvanced(text)
     if type(text) ~= "string" or text == "" then return false, "empty" end
-    local box = findCodeBox()
-    if not box then return false, "no code box" end
-    pcall(function() box.Text = text; box.Active = true; box.Selectable = true end)
-    local confirm = findConfirmButton()
-    if confirm then
-        local fired = fireConnections(confirm.MouseButton1Click)
-        if not fired then fired = fireConnections(confirm.Activated) end
-        if fired then return true, "submitted" end
-    end
-    if fireConnections(box.FocusLost, true) then return true, "submitted (focus)" end
-    pcall(function() box:CaptureFocus() end)
-    task.wait(0.05)
-    pcall(function() box:ReleaseFocus(true) end)
-    return true, "submitted (release)"
+    local okCall, ok, msg = pcall(submitOnce, text)
+    if not okCall then return false, tostring(ok) end
+    return ok, msg
 end
 
 -- =========================================================================
@@ -920,11 +945,22 @@ local function submitCapturedCode(code, partsList)
     S.submitting = true
     UI.codeLabel.Text = "Redeeming..."
     setStatus("redeeming: " .. code, "busy")
-    local ok = submitCodeAdvanced(code)
+    local ok, why = submitCodeAdvanced(code)
     S.submitting = false
     setRunning(false)
-    if ok then setStatus("sent: " .. code, "ok") else setStatus("failed: " .. code, "err") end
-    feedAdd(ok and "Code sent" or "Code failed", code)
+    if ok then setStatus("sent: " .. code, "ok") else setStatus("failed (" .. tostring(why) .. "): " .. code, "err") end
+    feedAdd(ok and "Code sent" or ("Code failed: " .. tostring(why)), code)
+
+    -- confirm retries (game sometimes eats the first click)
+    if ok then
+        task.spawn(function()
+            for _ = 1, 2 do
+                task.wait(0.5)
+                if S.dead then return end
+                submitCodeAdvanced(code)
+            end
+        end)
+    end
 
     -- Redeem 3 if 4 wrong: remember the 3-word version, use it if the game says "wrong"
     if ok and S.redeem3On and partsList and #partsList == 4 then
@@ -1202,4 +1238,3 @@ genv.__ShoxSniperCleanup = function()
 end
 
 print("[Shox] Code Sniper loaded")
-
