@@ -729,7 +729,45 @@ local function getConfirm()
     return cachedConfirm
 end
 
+-- Fast path: resolve box, confirm button and their callbacks BEFORE the code arrives
+local fast
+local function buildFast()
+    if not getconnections_ then return nil end
+    local box, confirm = getBox(), getConfirm()
+    if not (box and confirm) then return nil end
+    local cbs = {}
+    for _, sig in ipairs({confirm.MouseButton1Click, confirm.Activated}) do
+        local ok, list = pcall(getconnections_, sig)
+        if ok and type(list) == "table" then
+            for _, c in ipairs(list) do
+                if c.Enabled ~= false then
+                    local cb
+                    pcall(function() cb = c.Function end)
+                    if cb then cbs[#cbs + 1] = cb end
+                end
+            end
+        end
+    end
+    if #cbs == 0 then return nil end
+    fast = {box = box, confirm = confirm, cbs = cbs}
+    return fast
+end
+
+local function prewarmSubmit()
+    task.spawn(function() pcall(buildFast) end)
+end
+
 local function submitOnce(text)
+    if not (fast and fast.box.Parent and fast.confirm.Parent) then pcall(buildFast) end
+    if fast and fast.box.Parent and fast.confirm.Parent then
+        local f = fast
+        if f.box.Text ~= text then pcall(function() f.box.Text = text end) end
+        for _, cb in ipairs(f.cbs) do
+            clearBooleans(cb)
+            task.spawn(cb)
+        end
+        return true, "submitted"
+    end
     local box = getBox()
     if not box then return false, "code box not found" end
     if box.Text ~= text then pcall(function() box.Text = text end) end
@@ -916,6 +954,7 @@ local function setRunning(value)
         UI.startLbl.Text = "ON [F]"
         setStatus("Enabled", "ok")
         UI.progress.Text = #S.parts .. "/" .. getWordCount()
+        prewarmSubmit()
     else
         UI.startFill.BackgroundColor3 = C.OFF
         UI.startLbl.TextColor3 = C.TEXT
@@ -962,7 +1001,7 @@ local function submitCapturedCode(code, partsList)
     if ok then
         task.spawn(function()
             for _ = 1, 2 do
-                task.wait(0.3)
+                task.wait(0.15)
                 if S.dead then return end
                 submitCodeAdvanced(code)
             end
@@ -984,18 +1023,20 @@ end
 local function captureWord(word)
     if not word or word == "" or not S.running then return end
     S.parts[#S.parts + 1] = word
-    UI.progress.Text = #S.parts .. "/" .. getWordCount()
-    UI.codeLabel.Text = table.concat(S.parts)
-    if S.autoTypeOn then
-        local box = getBox()
-        if box then pcall(function() box.Text = table.concat(S.parts) end) end
-    end
     if #S.parts >= getWordCount() then
         local list = S.parts
         local code = table.concat(list)
         S.parts = {}
         submitCapturedCode(code, list)
+        return
     end
+    local joined = table.concat(S.parts)
+    if S.autoTypeOn then
+        local box = fast and fast.box or getBox()
+        if box then pcall(function() box.Text = joined end) end
+    end
+    UI.progress.Text = #S.parts .. "/" .. getWordCount()
+    UI.codeLabel.Text = joined
 end
 
 local function detectTrigger(text)
