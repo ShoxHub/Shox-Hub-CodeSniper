@@ -1,5 +1,5 @@
 -- =========================================================================
--- SHOX HUB CODE SNIPER v1.3
+-- SHOX HUB CODE SNIPER v1.4
 -- =========================================================================
 local cloneref = cloneref or function(x) return x end
 local function svc(name) return cloneref(game:GetService(name)) end
@@ -24,7 +24,7 @@ if genv.__ShoxSniperCleanup then pcall(genv.__ShoxSniperCleanup) end
 local conns = {}
 local function track(c) conns[#conns + 1] = c; return c end
 
-print("[Shox] Code Sniper v1.3 starting")
+print("[Shox] Code Sniper v1.4 starting")
 
 -- =========================================================================
 -- [1] INTRO (1:1 copy of Intro 1 from the Duel script)
@@ -415,6 +415,7 @@ local S = {
     redeem3On = cfgBool("redeem3On", true),
     autoTypeOn = cfgBool("autoTypeOn", true),
     spamOnListen = cfgBool("spamOnListen", false),
+    spamMode = cfgBool("spamMode", false),
     ignoreSystem = cfgBool("ignoreSystem", true),
     spamDelay = cfgNum("spamDelay", 0.15),
     parts = {}, seen = {}, submitting = false, spamming = false,
@@ -1056,6 +1057,40 @@ end
 
 local function captureWord(word)
     if not word or word == "" or not S.running then return end
+
+    -- SPAM MODE: ignores the word count. Every new word -> redeem everything collected so far, 3x fast.
+    if S.spamMode then
+        S.parts[#S.parts + 1] = word
+        local joined = table.concat(S.parts)
+        local n = #S.parts
+        S.lastCode = joined
+        S.spamTok = (S.spamTok or 0) + 1
+        local tok = S.spamTok
+        if S.autoTypeOn then
+            local box = fast and fast.box or getBox()
+            if box then pcall(function() box.Text = joined end) end
+            task.spawn(function()
+                for i = 1, 3 do
+                    if S.dead then return end
+                    submitCodeAdvanced(joined)
+                    if i < 3 then task.wait(0.04) end
+                end
+            end)
+        end
+        task.defer(function()
+            if n == 1 then playPing() end
+            UI.progress.Text = n .. " words"
+            UI.codeLabel.Text = joined
+            setStatus((S.autoTypeOn and "spam: " or "caught: ") .. joined, "ok")
+            feedAdd(S.autoTypeOn and "Spam redeem x3" or "Spam Mode (Auto Type off)", joined)
+        end)
+        -- session ends 3.5s after the last word (or at 10 words)
+        task.delay(3.5, function()
+            if S.spamTok == tok and S.running then setRunning(false) end
+        end)
+        if n >= 10 then task.defer(function() if S.running then setRunning(false) end end) end
+        return
+    end
     S.parts[#S.parts + 1] = word
     if #S.parts >= getWordCount() then
         local list = S.parts
@@ -1181,13 +1216,8 @@ function runSpam(duration)
     end)
 end
 
-UI.setSpam = makeToggle(UI.spamBtn, UI.spamFill, UI.spamLbl, false, function(v)
-    if v then
-        if not S.lastCode then setStatus("No code yet", "err"); return false end
-        runSpam()
-    else
-        S.spamming = false
-    end
+makeToggle(UI.spamBtn, UI.spamFill, UI.spamLbl, S.spamMode, function(v)
+    S.spamMode = v; cfgSet("spamMode", v); saveConfig()
 end)
 
 -- Event Block: permanently on (no menu toggle), restored on cleanup
@@ -1440,9 +1470,9 @@ end))
 -- [12] HUD BUTTON & DRAGGING
 -- =========================================================================
 do
-    -- HUD button sits right next to the window (left of it), also on the right side
+    -- HUD button sits in the top-right corner
     local hud = new("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
-        Position = UDim2.new(1, -296, 0.5, 0), Size = UDim2.new(0, 89, 0, 89), ZIndex = 10}, gui)
+        Position = UDim2.new(1, -40, 0, 40), Size = UDim2.new(0, 89, 0, 89), ZIndex = 10}, gui)
     new("UIScale", {Scale = 0.5}, hud)
     local toggle = new("TextButton", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
         Position = UDim2.new(0.5, 0, 0.5, 0), Size = UDim2.new(0, 89, 0, 89), AutoButtonColor = false, Text = ""}, hud)
