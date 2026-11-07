@@ -1,5 +1,5 @@
 -- =========================================================================
--- SHOX HUB CODE SNIPER v1.6
+-- SHOX HUB CODE SNIPER v1.7
 -- =========================================================================
 local cloneref = cloneref or function(x) return x end
 local function svc(name) return cloneref(game:GetService(name)) end
@@ -24,7 +24,7 @@ if genv.__ShoxSniperCleanup then pcall(genv.__ShoxSniperCleanup) end
 local conns = {}
 local function track(c) conns[#conns + 1] = c; return c end
 
-print("[Shox] Code Sniper v1.6 starting")
+print("[Shox] Code Sniper v1.7 starting")
 
 -- =========================================================================
 -- [1] INTRO (1:1 copy of Intro 1 from the Duel script)
@@ -825,6 +825,14 @@ local function submitOnce(text)
     return ok, ok and "submitted" or "release failed"
 end
 
+-- keep the fast path warm at all times (box, confirm, callbacks, debounce flags), so word 1 and the submit never wait
+task.spawn(function()
+    while not S.dead do
+        if not (fast and fast.box.Parent and fast.confirm.Parent) then pcall(buildFast) end
+        task.wait(0.4)
+    end
+end)
+
 -- never throws, never hangs the pipeline
 local function submitCodeAdvanced(text)
     if type(text) ~= "string" or text == "" then return false, "empty" end
@@ -997,13 +1005,13 @@ local function submitCapturedCode(code, partsList)
     if not code or code == "" then return end
     if S.seen[code] or S.submitting then return end
     S.seen[code] = true
-    task.delay(2, function() S.seen[code] = nil end)
     S.lastCode = code
     S.stamp = os.clock()
     local stamp = S.stamp
 
     -- Auto Type OFF: only show the code, user presses USE in the Feed
     if not S.autoTypeOn then
+        task.delay(2, function() S.seen[code] = nil end)
         playPing()
         setRunning(false)
         UI.codeLabel.Text = code
@@ -1018,6 +1026,7 @@ local function submitCapturedCode(code, partsList)
     S.submitting = true
     local ok, why = submitCodeAdvanced(code)
     S.submitting = false
+    task.delay(2, function() S.seen[code] = nil end)
 
     -- confirm retries (game sometimes eats the first click)
     -- only re-send if the game has not answered yet (any notification = answered); avoids "unexpected error" from double redeems
@@ -1025,7 +1034,7 @@ local function submitCapturedCode(code, partsList)
         local sentAt = os.clock()
         task.spawn(function()
             for _ = 1, 2 do
-                task.wait(0.15)
+                task.wait(0.12)
                 if S.dead or S.lastNotifAt > sentAt then return end
                 submitCodeAdvanced(code)
             end
@@ -1866,25 +1875,58 @@ do
     end
 
     -- fake brainrot spawn: clone the model locally and put it in front of you
+    local brainrotSet
+    local function getSet()
+        if brainrotSet then return brainrotSet end
+        brainrotSet = {}
+        for line in BRAINROT_DATA:gmatch("[^\n]+") do
+            if line:sub(1, 1) ~= "#" then brainrotSet[norm(line)] = true end
+        end
+        return brainrotSet
+    end
+    local function countParts(m)
+        local n = 0
+        for _, d in ipairs(m:GetDescendants()) do
+            if d:IsA("BasePart") then n = n + 1 end
+        end
+        return n
+    end
+
+    -- picks the real brainrot model: exact name match, preferably from the folder that holds many brainrots,
+    -- and with the most parts (so tiny effect/ring models with the same name lose)
     local function findModel(name)
-        local key = norm(name)
+        local key, set = norm(name), getSet()
         for _, root in ipairs({ReplicatedStorage, workspace}) do
-            local idx = modelIdx[root]
-            if not idx then
-                idx = {}
+            local e = modelIdx[root]
+            if not e then
+                e = {idx = {}, cnt = {}}
                 local n = 0
                 for _, d in ipairs(root:GetDescendants()) do
                     if d:IsA("Model") then
                         local k = norm(d.Name)
-                        if not idx[k] then idx[k] = d end
+                        if set[k] then
+                            local l = e.idx[k]
+                            if not l then l = {}; e.idx[k] = l end
+                            l[#l + 1] = d
+                            e.cnt[d.Parent] = (e.cnt[d.Parent] or 0) + 1
+                        end
                     end
                     n = n + 1
                     if n % 2000 == 0 then task.wait() end
                 end
-                modelIdx[root] = idx
+                modelIdx[root] = e
             end
-            local m = idx[key]
-            if m and m.Parent then return m end
+            local list = e.idx[key]
+            if list then
+                local best, bestScore
+                for _, m in ipairs(list) do
+                    if m.Parent then
+                        local score = ((e.cnt[m.Parent] or 0) >= 3 and 100000 or 0) + math.min(countParts(m), 5000)
+                        if not bestScore or score > bestScore then best, bestScore = m, score end
+                    end
+                end
+                if best then return best end
+            end
         end
         return nil
     end
@@ -1896,6 +1938,7 @@ do
         if not hrp then return end
         local src = findModel(name)
         if not src then toast("No model found for " .. name); return end
+        print("[Shox] Fake spawn:", name, "<-", src:GetFullName())
         local ok = pcall(function()
             local c = src:Clone()
             for _, d in ipairs(c:GetDescendants()) do
@@ -1909,7 +1952,8 @@ do
             c.Parent = workspace
             spawned[#spawned + 1] = c
         end)
-        if not ok then toast("Spawn failed for " .. name) end
+        if ok then toast("Spawned " .. name .. " (from " .. tostring(src.Parent and src.Parent.Name) .. ")")
+        else toast("Spawn failed for " .. name) end
     end
 
     function UI.clearFake()
@@ -1931,8 +1975,8 @@ do
         return row, box
     end
 
-    inputRow(228, "Code, e.g. ClaudeIsCool", "Announce", function(box) announceCode(box.Text) end)
-    inputRow(304, "Fake announcement text", "Send", function(box) fakeAnnounce(box.Text) end)
+    inputRow(228, "Code", "Announce", function(box) announceCode(box.Text) end)
+    inputRow(304, "Announcement text", "Send", function(box) fakeAnnounce(box.Text) end)
 
     -- brainrot picker row
     local brow, blbl = makeRow(page, 380, "", 22)
