@@ -1,5 +1,5 @@
 -- =========================================================================
--- SHOX HUB CODE SNIPER v1.1
+-- SHOX HUB CODE SNIPER v1.2
 -- =========================================================================
 local cloneref = cloneref or function(x) return x end
 local function svc(name) return cloneref(game:GetService(name)) end
@@ -24,7 +24,7 @@ if genv.__ShoxSniperCleanup then pcall(genv.__ShoxSniperCleanup) end
 local conns = {}
 local function track(c) conns[#conns + 1] = c; return c end
 
-print("[Shox] Code Sniper starting")
+print("[Shox] Code Sniper v1.2 starting")
 
 -- =========================================================================
 -- [1] INTRO (1:1 copy of Intro 1 from the Duel script)
@@ -369,12 +369,16 @@ end
 -- =========================================================================
 -- [2] CONFIG & STATE
 -- =========================================================================
-local CONFIG_FILE = "Shox_cfg.txt"
+local CONFIG_FILE = "ShoxCodeSniper_cfg.txt"
+local LEGACY_CONFIG = "Shox_cfg.txt"
 local config = {}
 local function loadConfig()
     config = {}
     if readfile and isfile then
-        local ok, txt = pcall(function() if isfile(CONFIG_FILE) then return readfile(CONFIG_FILE) end end)
+        local ok, txt = pcall(function()
+            if isfile(CONFIG_FILE) then return readfile(CONFIG_FILE) end
+            if isfile(LEGACY_CONFIG) then return readfile(LEGACY_CONFIG) end
+        end)
         if ok and type(txt) == "string" then
             for line in txt:gmatch("[^\n]+") do
                 local k, v = line:match("^(%w+)=(.*)$")
@@ -520,6 +524,16 @@ local gui = new("ScreenGui", {Name = "ShoxCodeSniper", ResetOnSpawn = false, Ign
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 100}, nil)
 pcall(function() gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
 gui.Parent = guiParent
+
+genv.__ShoxSniperCleanup = function()
+    S.dead = true
+    S.spamming = false
+    for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+    if UI.buyStop then pcall(UI.buyStop) end
+    if S.eventCtl and S.origExecute then pcall(function() S.eventCtl.Execute = S.origExecute end) end
+    pcall(shoxIntroFinish)
+    if gui then pcall(function() gui:Destroy() end) end
+end
 
 local win = new("Frame", {Name = "ShoxWindow", Active = true, AnchorPoint = Vector2.new(1, 0.5),
     BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.10, BorderSizePixel = 0,
@@ -1212,11 +1226,95 @@ local function applyRagdoll(v)
     end
 end
 
+-- AUTO BUY: fires the purchase prompt of every brainrot within range (10-20 studs)
+S.buyRange = math.clamp(math.floor(cfgNum("buyRange", 15)), 10, 20)
+do
+    local firePrompt_ = fireproximityprompt
+    local BUY_WORDS = {"buy", "purchase", "kaufen"}
+    local prompts = setmetatable({}, {__mode = "k"})
+    local lastFire = setmetatable({}, {__mode = "k"})
+    local logged = setmetatable({}, {__mode = "k"})
+    local hb, addC, remC
+
+    local function promptPos(p)
+        local par = p.Parent
+        if not par then return nil end
+        if par:IsA("BasePart") then return par.Position end
+        if par:IsA("Attachment") then return par.WorldPosition end
+        local m = par:FindFirstAncestorOfClass("Model")
+        if m then
+            local ok, cf = pcall(m.GetPivot, m)
+            if ok and cf then return cf.Position end
+        end
+        return nil
+    end
+
+    local function isBuyPrompt(p)
+        local action = (p.ActionText or ""):lower()
+        if action:find("steal", 1, true) then return false end
+        return hasAny(action .. " " .. (p.ObjectText or ""):lower() .. " " .. p.Name:lower(), BUY_WORDS)
+    end
+
+    local function buyFire(p)
+        pcall(function() p.HoldDuration = 0 end)
+        pcall(function() p.RequiresLineOfSight = false end)
+        if firePrompt_ then
+            pcall(firePrompt_, p)
+        else
+            task.spawn(function()
+                pcall(function() p:InputHoldBegin(); task.wait(0.05); p:InputHoldEnd() end)
+            end)
+        end
+    end
+
+    function UI.buyStop()
+        S.autoBuy = false
+        if hb then hb:Disconnect(); hb = nil end
+        if addC then addC:Disconnect(); addC = nil end
+        if remC then remC:Disconnect(); remC = nil end
+    end
+
+    function UI.buyStart()
+        UI.buyStop()
+        S.autoBuy = true
+        task.spawn(function()
+            for _, d in ipairs(workspace:GetDescendants()) do
+                if d:IsA("ProximityPrompt") then prompts[d] = true end
+            end
+        end)
+        addC = workspace.DescendantAdded:Connect(function(d)
+            if d:IsA("ProximityPrompt") then prompts[d] = true end
+        end)
+        remC = workspace.DescendantRemoving:Connect(function(d) prompts[d] = nil end)
+        hb = RunService.Heartbeat:Connect(function()
+            if S.dead then return end
+            local ch = player.Character
+            local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+            local hp, range, now = hrp.Position, S.buyRange, os.clock()
+            for p in pairs(prompts) do
+                if not p.Parent then
+                    prompts[p] = nil
+                elseif p.Enabled and (now - (lastFire[p] or 0)) > 0.2 then
+                    local pos = promptPos(p)
+                    if pos and (pos - hp).Magnitude <= range and not p:IsDescendantOf(ch) and isBuyPrompt(p) then
+                        lastFire[p] = now
+                        buyFire(p)
+                        if not logged[p] then
+                            logged[p] = true
+                            task.defer(feedAdd, "Auto Buy: " .. tostring(p.ObjectText) .. " [" .. tostring(p.ActionText) .. "]", nil)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end
+
 do
     local defs = {
         {"Auto Buy", function(v)
-            if v then setStatus("Auto Buy: not available yet", "err"); return false end
-            S.autoBuy = false
+            if v then UI.buyStart() else UI.buyStop() end
         end},
         {"Anchor", function(v) S.anchor = v; applyAnchor(v) end},
         {"Anti Ragdoll", function(v) S.ragdoll = v; applyRagdoll(v) end},
@@ -1240,6 +1338,27 @@ do
         local btn, fill, lbl = makeToggleButton(row, 476, "OFF")
         makeToggle(btn, fill, lbl, false, d[2])
     end
+end
+
+do
+    local row = makeRow(UI.tabs.TraitFarm.page, 304, "Buy Range", 22)
+    local fills, lbls = {}, {}
+    local opts = {10, 15, 20}
+    local function render()
+        for i, r in ipairs(opts) do
+            local on = r == S.buyRange
+            fills[i].BackgroundColor3 = on and C.ACTIVE or C.INACTIVE
+            lbls[i].TextColor3 = on and C.ACTIVE_TXT or C.INACTIVE_TXT
+        end
+    end
+    for i, r in ipairs(opts) do
+        local btn, fill, lbl = makeBtn(row, 345 + (i - 1) * 68, 34, 60, 46, 10, C.INACTIVE, tostring(r), 24)
+        fills[i], lbls[i] = fill, lbl
+        btn.MouseButton1Click:Connect(function()
+            S.buyRange = r; cfgSet("buyRange", r); saveConfig(); render()
+        end)
+    end
+    render()
 end
 
 track(player.CharacterAdded:Connect(function()
@@ -1301,14 +1420,5 @@ end
 -- =========================================================================
 selectTab("Redeemer")
 setRunning(false)
-
-genv.__ShoxSniperCleanup = function()
-    S.dead = true
-    S.spamming = false
-    for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
-    if S.eventCtl and S.origExecute then pcall(function() S.eventCtl.Execute = S.origExecute end) end
-    pcall(shoxIntroFinish)
-    if gui then pcall(function() gui:Destroy() end) end
-end
 
 print("[Shox] Code Sniper loaded")
