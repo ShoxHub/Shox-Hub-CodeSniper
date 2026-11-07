@@ -425,15 +425,46 @@ local S = {
 local UI = {}
 
 local C = {
-    BG_DARK = Color3.fromRGB(12, 12, 12), BG_ROW = Color3.fromRGB(22, 22, 22),
-    BG_CARD = Color3.fromRGB(30, 30, 30), BG_INPUT = Color3.fromRGB(38, 38, 38),
-    ACTIVE = Color3.fromRGB(255, 255, 255), INACTIVE = Color3.fromRGB(60, 60, 60),
-    ACTIVE_TXT = Color3.fromRGB(0, 0, 0), INACTIVE_TXT = Color3.fromRGB(255, 255, 255),
-    TEXT = Color3.fromRGB(255, 255, 255), TEXT_MUTED = Color3.fromRGB(160, 160, 160),
-    TEXT_ON = Color3.fromRGB(0, 0, 0), STROKE = Color3.fromRGB(80, 80, 80),
-    STROKE_DARK = Color3.fromRGB(45, 45, 45), ON = Color3.fromRGB(255, 255, 255),
-    OFF = Color3.fromRGB(55, 55, 55),
+    BG_DARK = Color3.fromRGB(9, 9, 14), BG_ROW = Color3.fromRGB(18, 18, 27),
+    BG_CARD = Color3.fromRGB(14, 14, 22), BG_INPUT = Color3.fromRGB(10, 10, 16),
+    ACTIVE = Color3.fromRGB(255, 255, 255), INACTIVE = Color3.fromRGB(34, 34, 48),
+    ACTIVE_TXT = Color3.fromRGB(8, 8, 12), INACTIVE_TXT = Color3.fromRGB(205, 205, 220),
+    TEXT = Color3.fromRGB(255, 255, 255), TEXT_MUTED = Color3.fromRGB(135, 135, 160),
+    TEXT_ON = Color3.fromRGB(8, 8, 12), STROKE = Color3.fromRGB(70, 70, 100),
+    STROKE_DARK = Color3.fromRGB(40, 40, 58), ON = Color3.fromRGB(255, 255, 255),
+    OFF = Color3.fromRGB(34, 34, 48), ERR = Color3.fromRGB(255, 95, 110), LIVE = Color3.fromRGB(90, 255, 140),
 }
+
+-- color themes: {name, color1, color2, ...} (picked in Settings, saved in the config)
+local THEMES = {
+    {"Neon", Color3.fromRGB(0, 229, 255), Color3.fromRGB(170, 70, 255), Color3.fromRGB(255, 45, 170)},
+    {"Toxic", Color3.fromRGB(200, 255, 0), Color3.fromRGB(0, 255, 140), Color3.fromRGB(0, 200, 255)},
+    {"Blood", Color3.fromRGB(255, 25, 60), Color3.fromRGB(255, 125, 0), Color3.fromRGB(255, 0, 140)},
+    {"Ice", Color3.fromRGB(255, 255, 255), Color3.fromRGB(120, 195, 255), Color3.fromRGB(160, 130, 255)},
+    {"Sunset", Color3.fromRGB(255, 205, 0), Color3.fromRGB(255, 90, 60), Color3.fromRGB(255, 0, 150)},
+    {"Rainbow", Color3.fromRGB(255, 40, 60), Color3.fromRGB(255, 220, 0), Color3.fromRGB(40, 255, 100),
+        Color3.fromRGB(0, 220, 255), Color3.fromRGB(80, 90, 255), Color3.fromRGB(255, 60, 220)},
+}
+UI.themeIdx = math.clamp(math.floor(cfgNum("theme", 1)), 1, #THEMES)
+UI.grads, UI.bgGrads, UI.tints, UI.spin, UI.flow, UI.parts = {}, {}, {}, {}, {}, {}
+
+function UI.col(i)
+    local t = THEMES[UI.themeIdx]
+    return t[((i - 1) % (#t - 1)) + 2]
+end
+-- looping color sequence of the current theme (dark = tinted background version)
+function UI.seq(dark)
+    local t = THEMES[UI.themeIdx]
+    local n = #t - 1
+    local kp = {}
+    for i = 1, n do
+        local c = t[i + 1]
+        if dark then c = Color3.new(c.R * 0.2 + 0.035, c.G * 0.2 + 0.035, c.B * 0.2 + 0.05) end
+        kp[#kp + 1] = ColorSequenceKeypoint.new((i - 1) / n, c)
+    end
+    kp[#kp + 1] = ColorSequenceKeypoint.new(1, kp[1].Value)
+    return ColorSequence.new(kp)
+end
 
 -- =========================================================================
 -- [3] UI HELPERS
@@ -455,45 +486,115 @@ local function stroke(p, th, col, border, tr)
         ApplyStrokeMode = border and Enum.ApplyStrokeMode.Border or Enum.ApplyStrokeMode.Contextual}, p)
 end
 
+-- tween helper (duration 0 / nil = set directly)
+function UI.tw(obj, props, dur, style, dir)
+    if not obj then return nil end
+    if not dur or dur <= 0 then
+        for k, v in pairs(props) do pcall(function() obj[k] = v end) end
+        return nil
+    end
+    local tw = TweenService:Create(obj, TweenInfo.new(dur, style or Enum.EasingStyle.Quint,
+        dir or Enum.EasingDirection.Out), props)
+    tw:Play()
+    return tw
+end
+
+-- theme-aware solid color (re-colored when the theme changes)
+function UI.tint(obj, prop, idx)
+    obj[prop] = UI.col(idx)
+    UI.tints[#UI.tints + 1] = {obj, prop, idx}
+end
+
+-- theme-aware gradient; mode "spin" = rotates, "flow" = color sweep
+function UI.grad(parent, rot, mode)
+    local g = Instance.new("UIGradient")
+    g.Color = UI.seq(false)
+    g.Rotation = rot or 0
+    g.Parent = parent
+    UI.grads[#UI.grads + 1] = g
+    if mode == "spin" then UI.spin[#UI.spin + 1] = g
+    elseif mode == "flow" then UI.flow[#UI.flow + 1] = g end
+    return g
+end
+
+function UI.applyTheme(i)
+    UI.themeIdx = i
+    local seq, dseq = UI.seq(false), UI.seq(true)
+    for _, g in ipairs(UI.grads) do pcall(function() g.Color = seq end) end
+    for _, g in ipairs(UI.bgGrads) do pcall(function() g.Color = dseq end) end
+    for _, t in ipairs(UI.tints) do pcall(function() t[1][t[2]] = UI.col(t[3]) end) end
+end
+
+-- button: transparent hit area + gradient fill (white fill = lit, dark fill = off) + label
 local function makeBtn(parent, x, y, w, h, r, fillColor, text, size)
-    local btn = new("TextButton", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.new(0, 0, 0),
+    local btn = new("TextButton", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
         Position = UDim2.new(0, x, 0, y), Size = UDim2.new(0, w, 0, h), AutoButtonColor = false, Text = ""}, parent)
-    corner(btn, r)
-    local fill = new("Frame", {BackgroundColor3 = fillColor, BorderSizePixel = 0,
-        Position = UDim2.new(0, 1, 0, 1), Size = UDim2.new(1, -2, 1, -2)}, btn)
-    corner(fill, r - 1)
+    local fill = new("Frame", {BackgroundColor3 = fillColor, BorderSizePixel = 0, Size = UDim2.new(1, 0, 1, 0)}, btn)
+    corner(fill, r)
+    UI.grad(fill, 35)
+    stroke(fill, 1.5, Color3.new(1, 1, 1), true, 0.82)
     local lbl = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), FontFace = FH,
         Text = text, TextColor3 = C.TEXT, TextSize = size}, btn)
-    stroke(lbl, 2, C.STROKE_DARK)
+    local sc = new("UIScale", {Scale = 1}, btn)
+    btn.MouseButton1Down:Connect(function() UI.tw(sc, {Scale = 0.92}, 0.08) end)
+    local function up() UI.tw(sc, {Scale = 1}, 0.18, Enum.EasingStyle.Back) end
+    btn.MouseButton1Up:Connect(up)
+    btn.MouseLeave:Connect(up)
     return btn, fill, lbl
 end
 
+-- row card with a glowing accent bar on the left
 local function makeRow(parent, y, text, size)
-    local row = new("Frame", {BackgroundColor3 = C.BG_ROW, BorderSizePixel = 0,
+    local row = new("Frame", {BackgroundColor3 = C.BG_ROW, BackgroundTransparency = 0.12, BorderSizePixel = 0,
         Position = UDim2.new(0, 10, 0, y), Size = UDim2.new(1, -20, 0, 68)}, parent)
-    corner(row, 12)
-    stroke(row, 1.5, C.STROKE_DARK, true, 0.3)
+    corner(row, 16)
+    stroke(row, 1.5, C.STROKE_DARK, true, 0.25)
+    local bar = new("Frame", {BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0,
+        AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 8, 0.5, 0), Size = UDim2.new(0, 5, 1, -26)}, row)
+    corner(bar, 3)
+    UI.grad(bar, 90)
     local lbl = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), FontFace = FH,
         Text = text, TextColor3 = C.TEXT, TextSize = size or 26, TextXAlignment = Enum.TextXAlignment.Left}, row)
-    stroke(lbl, 2, C.STROKE_DARK)
-    new("UIPadding", {PaddingLeft = UDim.new(0, 16)}, lbl)
+    new("UIPadding", {PaddingLeft = UDim.new(0, 24)}, lbl)
     return row, lbl
 end
 
+-- switch: dark track, gradient "on" layer, sliding knob (x is ignored, the switch sits on the right side of the row)
 local function makeToggleButton(parent, x, text)
-    return makeBtn(parent, x, 34, 100, 46, 10, C.INACTIVE, text, 24)
+    local btn = new("TextButton", {Name = "Switch", AnchorPoint = Vector2.new(1, 0.5), BackgroundColor3 = C.OFF,
+        BorderSizePixel = 0, Position = UDim2.new(1, -16, 0.5, 0), Size = UDim2.new(0, 104, 0, 42),
+        AutoButtonColor = false, Text = ""}, parent)
+    corner(btn, 21)
+    stroke(btn, 1.5, C.STROKE, true, 0.35)
+    local fill = new("Frame", {BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 1, BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 1, 0)}, btn)
+    corner(fill, 21)
+    UI.grad(fill, 20)
+    local lbl = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), FontFace = FH, Text = text,
+        TextColor3 = C.TEXT_MUTED, TextSize = 17, TextXAlignment = Enum.TextXAlignment.Right}, btn)
+    new("UIPadding", {PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 16)}, lbl)
+    local knob = new("Frame", {Name = "Knob", AnchorPoint = Vector2.new(0, 0.5), BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0, Position = UDim2.new(0, 5, 0.5, 0), Size = UDim2.new(0, 32, 0, 32), ZIndex = 2}, btn)
+    corner(knob, 16)
+    return btn, fill, lbl
 end
 
 -- onChange may return false -> toggle stays as it is.
 -- Returns a setter(state) that only re-renders (no onChange call).
 local function makeToggle(btn, fill, lbl, initial, onChange)
     local state = initial and true or false
-    local function render()
-        fill.BackgroundColor3 = state and C.ON or C.OFF
-        lbl.TextColor3 = state and C.TEXT_ON or C.TEXT
+    local knob = btn:FindFirstChild("Knob")
+    local function render(anim)
+        local d = anim and 0.2 or 0
+        UI.tw(fill, {BackgroundTransparency = state and 0 or 1}, d)
+        if knob then
+            UI.tw(knob, {Position = state and UDim2.new(0, 67, 0.5, 0) or UDim2.new(0, 5, 0.5, 0)}, d, Enum.EasingStyle.Back)
+        end
         lbl.Text = state and "ON" or "OFF"
+        lbl.TextColor3 = state and C.TEXT_ON or C.TEXT_MUTED
+        lbl.TextXAlignment = state and Enum.TextXAlignment.Left or Enum.TextXAlignment.Right
     end
-    render()
+    render(false)
     btn.MouseButton1Click:Connect(function()
         local nextState = not state
         if onChange then
@@ -501,9 +602,9 @@ local function makeToggle(btn, fill, lbl, initial, onChange)
             if ok and res == false then return end
         end
         state = nextState
-        render()
+        render(true)
     end)
-    return function(v) state = v and true or false; render() end
+    return function(v) state = v and true or false; render(true) end
 end
 
 -- =========================================================================
@@ -524,6 +625,17 @@ local gui = new("ScreenGui", {Name = "ShoxCodeSniper", ResetOnSpawn = false, Ign
 pcall(function() gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
 gui.Parent = guiParent
 
+-- drops dead gradients / tinted objects from the theme lists (destroyed feed cards)
+function UI.prune()
+    for _, list in ipairs({UI.grads, UI.bgGrads, UI.tints, UI.spin, UI.flow}) do
+        for i = #list, 1, -1 do
+            local o = list[i]
+            if typeof(o) == "table" then o = o[1] end
+            if not (o and o:IsDescendantOf(gui)) then table.remove(list, i) end
+        end
+    end
+end
+
 genv.__ShoxSniperCleanup = function()
     S.dead = true
     for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
@@ -536,50 +648,95 @@ genv.__ShoxSniperCleanup = function()
 end
 
 local win = new("Frame", {Name = "ShoxWindow", Active = true, AnchorPoint = Vector2.new(1, 0.5),
-    BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.10, BorderSizePixel = 0,
-    Position = UDim2.new(1, -12, 0.5, 0),
+    BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.new(1, -12, 0.5, 0),
     Size = UDim2.new(0, 560, 0, FULL_HEIGHT), ClipsDescendants = true}, gui)
-corner(win, 18)
-new("UIScale", {Scale = WIN_SCALE}, win)
+corner(win, 22)
+UI.winScale = new("UIScale", {Scale = WIN_SCALE}, win)
+UI.grad(stroke(win, 3.5, Color3.new(1, 1, 1), true, 0), 0, "spin")
 
-local body = new("Frame", {Name = "Body", BackgroundColor3 = C.BG_DARK, BackgroundTransparency = 0.35,
-    BorderSizePixel = 0, Position = UDim2.new(0, 0, 0, 72), Size = UDim2.new(1, 0, 1, -72)}, win)
-corner(body, 18)
+-- background: dark theme-tinted gradient, floating particles, sweeping scan line
+local bg = new("Frame", {Name = "BG", BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.05,
+    BorderSizePixel = 0, Size = UDim2.new(1, 0, 1, 0)}, win)
+corner(bg, 22)
+do
+    local g = Instance.new("UIGradient")
+    g.Color = UI.seq(true)
+    g.Rotation = 115
+    g.Parent = bg
+    UI.bgGrads[#UI.bgGrads + 1] = g
+end
+local fx = new("Frame", {Name = "FX", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0)}, win)
+for i = 1, 14 do
+    local sz = math.random(3, 7)
+    local pf = new("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 0.5 + math.random() * 0.3,
+        BorderSizePixel = 0, Size = UDim2.fromOffset(sz, sz), Rotation = math.random(0, 45)}, fx)
+    corner(pf, (i % 2 == 0) and sz or 1)
+    UI.tint(pf, "BackgroundColor3", i)
+    local p = {f = pf, x = 0.05 + math.random() * 0.9, y = math.random(), v = 0.02 + math.random() * 0.05,
+        ph = math.random() * 6.28, sw = 0.004 + math.random() * 0.008}
+    pf.Position = UDim2.fromScale(p.x, p.y)
+    UI.parts[#UI.parts + 1] = p
+end
+UI.scan = new("Frame", {Name = "Scan", BorderSizePixel = 0, Position = UDim2.new(0, 12, 0, -100),
+    Size = UDim2.new(1, -24, 0, 90)}, fx)
+UI.tint(UI.scan, "BackgroundColor3", 1)
+new("UIGradient", {Rotation = 90, Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1),
+    NumberSequenceKeypoint.new(0.5, 0.88), NumberSequenceKeypoint.new(1, 1)})}, UI.scan)
+
+local body = new("Frame", {Name = "Body", BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 72),
+    Size = UDim2.new(1, 0, 1, -72)}, win)
 
 local header = new("Frame", {Name = "Header", Active = true, BackgroundTransparency = 1,
-    ClipsDescendants = true, Size = UDim2.new(1, 0, 0, 72)}, win)
-corner(header, 18)
+    Size = UDim2.new(1, 0, 0, 72)}, win)
 
 do
-    local headerBG = new("Frame", {BackgroundColor3 = Color3.fromRGB(20, 20, 20), BackgroundTransparency = 0.15,
-        BorderSizePixel = 0, Size = UDim2.new(1, 0, 1, 0)}, header)
-    corner(headerBG, 18)
-    new("Frame", {BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.55, BorderSizePixel = 0,
-        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 71), Size = UDim2.new(1, -24, 0, 1)}, header)
+    local logo = new("Frame", {AnchorPoint = Vector2.new(0, 0.5), BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0, Position = UDim2.new(0, 16, 0.5, -2), Size = UDim2.fromOffset(46, 46)}, header)
+    corner(logo, 14)
+    UI.grad(logo, 45, "spin")
+    new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), FontFace = FH, Text = "S",
+        TextColor3 = C.TEXT_ON, TextSize = 32}, logo)
+    UI.logoScale = new("UIScale", {Scale = 1}, logo)
 
-    local title = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 44), ZIndex = 5,
-        FontFace = FH, Text = "Code Sniper", TextColor3 = C.TEXT, TextSize = 34,
+    local title = new("TextLabel", {BackgroundTransparency = 1, Position = UDim2.new(0, 76, 0, 8),
+        Size = UDim2.new(0, 250, 0, 32), FontFace = FH, Text = "CODE SNIPER", TextColor3 = Color3.new(1, 1, 1),
+        TextSize = 28, TextXAlignment = Enum.TextXAlignment.Left}, header)
+    UI.grad(title, 0, "flow")
+    new("TextLabel", {BackgroundTransparency = 1, Position = UDim2.new(0, 77, 0, 41), Size = UDim2.new(0, 250, 0, 18),
+        FontFace = FX, Text = "discord.gg/EA7xS26mA9", TextColor3 = C.TEXT_MUTED, TextSize = 15,
         TextXAlignment = Enum.TextXAlignment.Left}, header)
-    stroke(title, 2, C.STROKE_DARK)
-    new("UIPadding", {PaddingLeft = UDim.new(0, 12)}, title)
 
-    local sub = new("TextLabel", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 42),
-        Size = UDim2.new(1, 0, 0, 22), ZIndex = 5, FontFace = FX, Text = "discord.gg/EA7xS26mA9",
-        TextColor3 = C.TEXT_MUTED, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Left}, header)
-    stroke(sub, 2, C.STROKE_DARK)
-    new("UIPadding", {PaddingLeft = UDim.new(0, 12)}, sub)
+    -- live chip: IDLE / LIVE with a pulsing dot
+    local chip = new("Frame", {AnchorPoint = Vector2.new(1, 0.5), BackgroundColor3 = C.BG_CARD,
+        BackgroundTransparency = 0.1, BorderSizePixel = 0, Position = UDim2.new(1, -72, 0.5, -2),
+        Size = UDim2.fromOffset(100, 32)}, header)
+    corner(chip, 16)
+    stroke(chip, 1.5, C.STROKE, true, 0.4)
+    UI.dot = new("Frame", {AnchorPoint = Vector2.new(0, 0.5), BackgroundColor3 = C.TEXT_MUTED, BorderSizePixel = 0,
+        Position = UDim2.new(0, 13, 0.5, 0), Size = UDim2.fromOffset(12, 12)}, chip)
+    corner(UI.dot, 6)
+    local chipLbl = new("TextLabel", {BackgroundTransparency = 1, Position = UDim2.new(0, 34, 0, 0),
+        Size = UDim2.new(1, -40, 1, 0), FontFace = FH, Text = "IDLE", TextColor3 = C.TEXT_MUTED, TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left}, chip)
+    function UI.runVisual(on)
+        UI.runOn = on and true or false
+        local col = on and C.LIVE or C.TEXT_MUTED
+        chipLbl.Text = on and "LIVE" or "IDLE"
+        chipLbl.TextColor3 = col
+        UI.dot.BackgroundColor3 = col
+        if not on then
+            UI.dot.BackgroundTransparency = 0
+            if UI.startStroke then UI.startStroke.Transparency = 0.82; UI.startStroke.Thickness = 1.5 end
+            if UI.hudPulse then UI.hudPulse.Scale = 1 end
+        end
+    end
 
-    local minBtn = new("TextButton", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.fromRGB(40, 40, 40),
-        BorderSizePixel = 0, Position = UDim2.new(0, 528, 0, 30), Size = UDim2.new(0, 44, 0, 44), ZIndex = 6,
-        AutoButtonColor = false, Text = ""}, header)
-    corner(minBtn, 10)
-    local minFill = new("Frame", {BackgroundColor3 = Color3.fromRGB(15, 15, 15), BorderSizePixel = 0,
-        Position = UDim2.new(0, 2, 0, 2), Size = UDim2.new(1, -4, 1, -4)}, minBtn)
-    corner(minFill, 8)
-    local minIcon = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), FontFace = FH,
-        Text = "−", TextColor3 = C.TEXT, TextSize = 32}, minBtn)
-    stroke(minIcon, 2, C.STROKE_DARK)
+    local line = new("Frame", {BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0,
+        AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 69), Size = UDim2.new(1, -28, 0, 2)}, header)
+    corner(line, 1)
+    UI.grad(line, 0, "flow")
 
+    local minBtn, _, minIcon = makeBtn(header, 528, 34, 44, 44, 12, C.INACTIVE, "−", 30)
     minBtn.MouseButton1Click:Connect(function()
         minimized = not minimized
         if minimized then
@@ -601,18 +758,34 @@ UI.tabs = {}
 local function selectTab(which)
     for key, t in pairs(UI.tabs) do
         local on = key == which
+        if on and not t.page.Visible then
+            t.page.Position = UDim2.new(0, 26, 0, 78)
+            UI.tw(t.page, {Position = UDim2.new(0, 0, 0, 78)}, 0.28)
+        end
         t.page.Visible = on
-        t.fill.BackgroundColor3 = on and C.ACTIVE or C.INACTIVE
         t.lbl.TextColor3 = on and C.ACTIVE_TXT or C.INACTIVE_TXT
+        if on and UI.tabInd then
+            UI.tw(UI.tabInd, {Position = UDim2.new(0, (t.idx - 1) * 134 + 4, 0, 4)}, 0.3, Enum.EasingStyle.Back)
+        end
     end
 end
 do
-    local defs = {{"Redeemer", "Redeemer", 75}, {"TraitFarm", "Trait Farm", 210}, {"Settings", "Settings", 345}, {"Feed", "Feed", 480}}
-    for _, d in ipairs(defs) do
-        local btn, fill, lbl = makeBtn(win, d[3], 111, 125, 58, 12, C.INACTIVE, d[2], 22)
-        local page = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 150),
-            Size = UDim2.new(1, 0, 1, -150), Visible = false}, win)
-        UI.tabs[d[1]] = {fill = fill, lbl = lbl, page = page}
+    local bar = new("Frame", {BackgroundColor3 = C.BG_CARD, BackgroundTransparency = 0.1, BorderSizePixel = 0,
+        Position = UDim2.new(0, 12, 0, 10), Size = UDim2.new(0, 536, 0, 52)}, body)
+    corner(bar, 16)
+    stroke(bar, 1.5, C.STROKE_DARK, true, 0.2)
+    UI.tabInd = new("Frame", {BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0,
+        Position = UDim2.new(0, 4, 0, 4), Size = UDim2.new(0, 126, 0, 44)}, bar)
+    corner(UI.tabInd, 12)
+    UI.grad(UI.tabInd, 0, "flow")
+    local defs = {{"Redeemer", "Redeemer"}, {"TraitFarm", "Trait Farm"}, {"Settings", "Settings"}, {"Feed", "Feed"}}
+    for i, d in ipairs(defs) do
+        local btn = new("TextButton", {BackgroundTransparency = 1, Position = UDim2.new(0, (i - 1) * 134, 0, 0),
+            Size = UDim2.new(0, 134, 1, 0), AutoButtonColor = false, FontFace = FH, Text = d[2], TextSize = 20,
+            TextColor3 = C.INACTIVE_TXT}, bar)
+        local page = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 78),
+            Size = UDim2.new(1, 0, 1, -78), Visible = false}, body)
+        UI.tabs[d[1]] = {lbl = btn, page = page, idx = i}
         btn.MouseButton1Click:Connect(function() selectTab(d[1]) end)
     end
 end
@@ -855,7 +1028,7 @@ do
     local row1 = makeRow(page, 0, "Words")
     UI.wordFills, UI.wordLbls = {}, {}
     for i = 1, 4 do
-        local btn, fill, lbl = makeBtn(row1, 277 + (i - 1) * 68, 34, 60, 46, 10, C.INACTIVE, tostring(i), 28)
+        local btn, fill, lbl = makeBtn(row1, 277 + (i - 1) * 68, 34, 60, 46, 12, C.INACTIVE, tostring(i), 28)
         UI.wordFills[i], UI.wordLbls[i] = fill, lbl
         btn.MouseButton1Click:Connect(function()
             S.wordsIndex = i; cfgSet("wordsIndex", i); saveConfig(); UI.renderWords()
@@ -864,26 +1037,82 @@ do
 
     local row2, statusLbl = makeRow(page, 76, "Redeemer: Disabled")
     statusLbl.TextColor3 = C.TEXT_MUTED
+    statusLbl.TextScaled = true
+    statusLbl.Size = UDim2.new(0, 330, 1, 0)
+    new("UITextSizeConstraint", {MaxTextSize = 24, MinTextSize = 10}, statusLbl)
     UI.status = statusLbl
-    UI.startBtn, UI.startFill, UI.startLbl = makeBtn(row2, 446, 34, 160, 46, 10, C.OFF, "OFF [F]", 20)
+    UI.startBtn, UI.startFill, UI.startLbl = makeBtn(row2, 446, 34, 160, 46, 12, C.OFF, "OFF [F]", 20)
+    UI.startStroke = UI.startFill:FindFirstChildOfClass("UIStroke")
 
-    local _, progressLbl = makeRow(page, 152, "0/" .. S.wordsIndex)
+    -- progress: big counter on the left, segmented bar on the right (follows the counter text)
+    local row3, progressLbl = makeRow(page, 152, "0/" .. S.wordsIndex)
     UI.progress = progressLbl
+    local barBox = new("Frame", {AnchorPoint = Vector2.new(1, 0.5), BackgroundTransparency = 1,
+        Position = UDim2.new(1, -18, 0.5, 0), Size = UDim2.new(0, 290, 0, 26)}, row3)
+    UI.segs = {}
+    for i = 1, 4 do
+        local seg = new("Frame", {BackgroundColor3 = C.INACTIVE, BorderSizePixel = 0}, barBox)
+        corner(seg, 8)
+        UI.grad(seg, 0)
+        UI.segs[i] = seg
+    end
+    function UI.renderSegs()
+        local txt = tostring(UI.progress.Text)
+        local n, total = txt:match("^(%d+)/(%d+)$")
+        n, total = tonumber(n), tonumber(total)
+        local lit = 0
+        if n and total then lit = n
+        elseif txt:find("words", 1, true) then lit = 99; total = nil
+        else total = nil end
+        total = math.clamp(total or 4, 1, 4)
+        for i = 1, 4 do
+            local seg = UI.segs[i]
+            seg.Visible = i <= total
+            seg.Size = UDim2.new(1 / total, -6, 1, 0)
+            seg.Position = UDim2.new((i - 1) / total, 3, 0, 0)
+            UI.tw(seg, {BackgroundColor3 = (i <= lit) and C.ACTIVE or C.INACTIVE}, 0.15)
+        end
+    end
+    progressLbl:GetPropertyChangedSignal("Text"):Connect(UI.renderSegs)
+    UI.renderSegs()
 
     local row4 = makeRow(page, 228, "Auto Detect")
     local adBtn, adFill, adLbl = makeToggleButton(row4, 476, "ON")
     makeToggle(adBtn, adFill, adLbl, S.autoOn, function(v) S.autoOn = v; cfgSet("autoOn", v); saveConfig() end)
 
-    local display = new("Frame", {BackgroundColor3 = C.BG_CARD, BorderSizePixel = 0,
-        Position = UDim2.new(0, 10, 0, 304), Size = UDim2.new(1, -20, 0, 50)}, page)
-    corner(display, 12)
-    stroke(display, 2, C.STROKE, true)
-    UI.codeLabel = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), FontFace = FH,
-        Text = "Code Will Show Here", TextColor3 = C.TEXT, TextSize = 28}, display)
-    stroke(UI.codeLabel, 2, C.STROKE_DARK)
+    -- code display: terminal panel with a spinning gradient border, pops when a code arrives
+    local display = new("Frame", {BackgroundColor3 = C.BG_INPUT, BackgroundTransparency = 0.05, BorderSizePixel = 0,
+        Position = UDim2.new(0, 10, 0, 304), Size = UDim2.new(1, -20, 0, 72)}, page)
+    corner(display, 16)
+    local dStroke = stroke(display, 2.5, Color3.new(1, 1, 1), true, 0.1)
+    UI.grad(dStroke, 0, "spin")
+    new("TextLabel", {BackgroundTransparency = 1, Position = UDim2.new(0, 18, 0, 6), Size = UDim2.new(1, -36, 0, 16),
+        FontFace = FX, Text = "> CAUGHT CODE", TextColor3 = C.TEXT_MUTED, TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left}, display)
+    UI.codeLabel = new("TextLabel", {BackgroundTransparency = 1, Position = UDim2.new(0, 16, 0, 22),
+        Size = UDim2.new(1, -32, 1, -28), FontFace = FH, Text = "Code Will Show Here", TextColor3 = Color3.new(1, 1, 1),
+        TextScaled = true, TextTransparency = 0.55}, display)
+    new("UITextSizeConstraint", {MaxTextSize = 34, MinTextSize = 12}, UI.codeLabel)
+    UI.grad(UI.codeLabel, 0, "flow")
+    local codeScale = new("UIScale", {Scale = 1}, UI.codeLabel)
+    UI.codeLabel:GetPropertyChangedSignal("Text"):Connect(function()
+        local txt = tostring(UI.codeLabel.Text)
+        local idle = txt == "" or txt == "Code Will Show Here"
+        UI.codeLabel.TextTransparency = idle and 0.55 or 0
+        if not idle then
+            codeScale.Scale = 1.16
+            UI.tw(codeScale, {Scale = 1}, 0.35, Enum.EasingStyle.Back)
+            dStroke.Thickness = 5
+            UI.tw(dStroke, {Thickness = 2.5}, 0.4)
+        end
+    end)
 
-    local spamRow = makeRow(page, 380, "Spam Mode", 22)
+    local spamRow = makeRow(page, 388, "Spam Mode", 22)
     UI.spamBtn, UI.spamFill, UI.spamLbl = makeToggleButton(spamRow, 476, "OFF")
+
+    new("TextLabel", {BackgroundTransparency = 1, Position = UDim2.new(0, 10, 0, 470), Size = UDim2.new(1, -20, 0, 22),
+        FontFace = FX, Text = "F = arm / disarm   |   tap the S button to show / hide", TextColor3 = C.TEXT_MUTED,
+        TextSize = 14}, page)
 end
 
 local function getWordCount() return S.wordsIndex end
@@ -918,41 +1147,59 @@ end
 local feedEntries, feedTotal = {}, 0
 do
     local page = UI.tabs.Feed.page
-    UI.feedList = new("ScrollingFrame", {BackgroundColor3 = C.BG_DARK, BackgroundTransparency = 0.3, BorderSizePixel = 0,
-        Position = UDim2.new(0, 10, 0, 10), Size = UDim2.new(1, -20, 1, -50), ScrollBarThickness = 8,
+    UI.feedList = new("ScrollingFrame", {BackgroundColor3 = C.BG_DARK, BackgroundTransparency = 0.35, BorderSizePixel = 0,
+        Position = UDim2.new(0, 10, 0, 4), Size = UDim2.new(1, -20, 1, -48), ScrollBarThickness = 6,
         ScrollBarImageColor3 = C.STROKE, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ScrollingDirection = Enum.ScrollingDirection.Y}, page)
-    corner(UI.feedList, 12)
-    stroke(UI.feedList, 1.5, C.STROKE_DARK, true)
-    new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, UI.feedList)
+    corner(UI.feedList, 16)
+    stroke(UI.feedList, 1.5, C.STROKE_DARK, true, 0.2)
+    new("UIListLayout", {Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder}, UI.feedList)
     new("UIPadding", {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
         PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8)}, UI.feedList)
+    UI.feedEmpty = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 80), FontFace = FX,
+        Text = "Nothing caught yet", TextColor3 = C.TEXT_MUTED, TextSize = 22, LayoutOrder = 1}, UI.feedList)
     UI.feedCount = new("TextLabel", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1),
-        Position = UDim2.new(0.5, 0, 1, -4), Size = UDim2.new(1, -20, 0, 30), FontFace = FH,
-        Text = "0 redeemed", TextColor3 = C.TEXT_MUTED, TextSize = 24}, page)
+        Position = UDim2.new(0.5, 0, 1, -2), Size = UDim2.new(1, -20, 0, 34), FontFace = FH,
+        Text = "0 redeemed", TextColor3 = Color3.new(1, 1, 1), TextSize = 24}, page)
+    UI.grad(UI.feedCount, 0, "flow")
 end
 
 local function feedAdd(text, code)
     feedTotal = feedTotal + 1
     UI.feedCount.Text = feedTotal .. " redeemed"
+    if UI.feedEmpty then UI.feedEmpty:Destroy(); UI.feedEmpty = nil end
     local card = new("Frame", {Size = UDim2.new(1, -4, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundColor3 = C.BG_ROW, BorderSizePixel = 0, LayoutOrder = -feedTotal}, UI.feedList)
-    corner(card, 10)
-    stroke(card, 1.5, code and C.STROKE or C.STROKE_DARK, true)
+        BackgroundColor3 = C.BG_ROW, BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = -feedTotal}, UI.feedList)
+    corner(card, 14)
+    local cardStroke = stroke(card, 1.5, code and Color3.new(1, 1, 1) or C.STROKE_DARK, true, 1)
+    if code then UI.grad(cardStroke, 30) end
+    UI.tw(card, {BackgroundTransparency = 0.1}, 0.3)
+    UI.tw(cardStroke, {Transparency = code and 0.1 or 0.3}, 0.3)
     new("UIPadding", {PaddingTop = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12),
-        PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14)}, card)
+        PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 14)}, card)
     new("UIListLayout", {Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder}, card)
-    new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-        FontFace = FX, Text = text, TextColor3 = C.TEXT_MUTED, TextSize = 22, TextWrapped = true,
+    local info = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        FontFace = FX, Text = text, TextColor3 = C.TEXT_MUTED, TextSize = 20, TextWrapped = true, TextTransparency = 1,
         TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 1}, card)
+    UI.tw(info, {TextTransparency = 0}, 0.35)
     if code then
         local codeRow = new("Frame", {Size = UDim2.new(1, 0, 0, 56), BackgroundTransparency = 1, LayoutOrder = 2}, card)
         local codeLbl = new("TextLabel", {Size = UDim2.new(0.7, -3, 1, 0), BackgroundColor3 = C.BG_INPUT, Text = code,
-            BorderSizePixel = 0, TextColor3 = C.ACTIVE, FontFace = FH, TextSize = 30, TextScaled = false, TextTruncate = Enum.TextTruncate.AtEnd}, codeRow)
-        corner(codeLbl, 10)
+            BorderSizePixel = 0, TextColor3 = Color3.new(1, 1, 1), FontFace = FH, TextScaled = true}, codeRow)
+        new("UITextSizeConstraint", {MaxTextSize = 30, MinTextSize = 12}, codeLbl)
+        new("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10)}, codeLbl)
+        corner(codeLbl, 12)
+        UI.grad(codeLbl, 0, "flow")
         local useBtn = new("TextButton", {Size = UDim2.new(0.3, -3, 1, 0), Position = UDim2.new(0.7, 3, 0, 0),
-            BorderSizePixel = 0, BackgroundColor3 = C.ACTIVE, Text = "USE", TextColor3 = C.TEXT_ON, FontFace = FH, TextSize = 28}, codeRow)
-        corner(useBtn, 10)
+            BorderSizePixel = 0, BackgroundColor3 = Color3.new(1, 1, 1), Text = "USE", TextColor3 = C.TEXT_ON,
+            FontFace = FH, TextSize = 26, AutoButtonColor = false}, codeRow)
+        corner(useBtn, 12)
+        UI.grad(useBtn, 35)
+        local useScale = new("UIScale", {Scale = 1}, useBtn)
+        useBtn.MouseButton1Down:Connect(function() UI.tw(useScale, {Scale = 0.92}, 0.08) end)
+        local function useUp() UI.tw(useScale, {Scale = 1}, 0.18, Enum.EasingStyle.Back) end
+        useBtn.MouseButton1Up:Connect(useUp)
+        useBtn.MouseLeave:Connect(useUp)
         useBtn.MouseButton1Click:Connect(function()
             S.lastCode = code
             task.spawn(submitCodeAdvanced, code)
@@ -962,6 +1209,7 @@ local function feedAdd(text, code)
     if #feedEntries > 36 then
         local oldest = table.remove(feedEntries, 1)
         if oldest then oldest:Destroy() end
+        UI.prune()
     end
 end
 
@@ -982,7 +1230,7 @@ end
 
 local function setStatus(msg, kind)
     UI.status.Text = "Redeemer: " .. tostring(msg or "")
-    UI.status.TextColor3 = (kind == "ok") and C.TEXT or C.TEXT_MUTED
+    UI.status.TextColor3 = (kind == "ok") and C.TEXT or ((kind == "err") and C.ERR or C.TEXT_MUTED)
 end
 
 -- SPAM MODE session: opens on a trigger, closes after 8s without a word. It NEVER turns the redeemer off.
@@ -1043,6 +1291,7 @@ S.unmute = function() muteGame(false) end
 local function setRunning(value)
     S.running = value
     muteGame(value)
+    if UI.runVisual then UI.runVisual(value) end
     if value then
         UI.startFill.BackgroundColor3 = C.ON
         UI.startLbl.TextColor3 = C.TEXT_ON
@@ -1287,9 +1536,10 @@ do
     local function toast(msg)
         local t = new("TextLabel", {AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -120),
             Size = UDim2.new(0, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.XY, BackgroundColor3 = C.BG_CARD,
-            BackgroundTransparency = 0.1, TextColor3 = C.TEXT, FontFace = FH, TextSize = 24, Text = msg, ZIndex = 30}, gui)
-        corner(t, 10)
-        new("UIPadding", {PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 16),
+            BackgroundTransparency = 0.05, TextColor3 = C.TEXT, FontFace = FH, TextSize = 24, Text = msg, ZIndex = 30}, gui)
+        corner(t, 14)
+        UI.grad(stroke(t, 2, Color3.new(1, 1, 1), true, 0), 0, "spin")
+        new("UIPadding", {PaddingLeft = UDim.new(0, 18), PaddingRight = UDim.new(0, 18),
             PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10)}, t)
         Debris:AddItem(t, 3.5)
     end
@@ -1383,13 +1633,17 @@ do
     local function inputRow(y, placeholder, btnText, onClick)
         local row, lbl = makeRow(page, y, "", 22)
         lbl.Text = ""
-        local box = new("TextBox", {AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 10, 0.5, 0),
-            Size = UDim2.new(0, 340, 0, 48), BackgroundColor3 = C.BG_INPUT, BorderSizePixel = 0, FontFace = FH,
+        local box = new("TextBox", {AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 26, 0.5, 0),
+            Size = UDim2.new(0, 330, 0, 48), BackgroundColor3 = C.BG_INPUT, BorderSizePixel = 0, FontFace = FH,
             TextSize = 20, TextColor3 = C.TEXT, PlaceholderText = placeholder, PlaceholderColor3 = C.TEXT_MUTED,
             Text = "", ClearTextOnFocus = false, TextXAlignment = Enum.TextXAlignment.Left}, row)
-        corner(box, 10)
-        new("UIPadding", {PaddingLeft = UDim.new(0, 12)}, box)
-        local btn = makeBtn(row, 450, 34, 150, 46, 10, C.INACTIVE, btnText, 20)
+        corner(box, 12)
+        local boxStroke = stroke(box, 1.5, C.STROKE_DARK, true, 0.1)
+        box.Focused:Connect(function() boxStroke.Color = UI.col(1) end)
+        box.FocusLost:Connect(function() boxStroke.Color = C.STROKE_DARK end)
+        new("UIPadding", {PaddingLeft = UDim.new(0, 14)}, box)
+        local btn, _, bl = makeBtn(row, 450, 34, 150, 46, 12, C.ACTIVE, btnText, 20)
+        bl.TextColor3 = C.ACTIVE_TXT
         btn.MouseButton1Click:Connect(function() onClick(box) end)
         return row, box
     end
@@ -1397,6 +1651,31 @@ do
     inputRow(304, "Code", "Announce", function(box) announceCode(box.Text) end)
     inputRow(380, "Announcement text", "Send", function(box) fakeAnnounce(box.Text) end)
 
+end
+-- THEME PICKER (Settings page): swatches, saved in the config
+do
+    local row = makeRow(UI.tabs.Settings.page, 456, "Theme", 22)
+    local rings = {}
+    local function render()
+        for i, r in ipairs(rings) do r.Transparency = (i == UI.themeIdx) and 0 or 1 end
+    end
+    for i, th in ipairs(THEMES) do
+        local sw = new("TextButton", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.new(1, 1, 1),
+            BorderSizePixel = 0, Position = UDim2.new(0, 222 + (i - 1) * 52, 0, 34), Size = UDim2.fromOffset(38, 38),
+            AutoButtonColor = false, Text = ""}, row)
+        corner(sw, 19)
+        local n = #th - 1
+        local kp = {}
+        for k = 1, n do kp[#kp + 1] = ColorSequenceKeypoint.new((k - 1) / (n - 1), th[k + 1]) end
+        new("UIGradient", {Color = ColorSequence.new(kp), Rotation = 45}, sw)
+        rings[i] = stroke(sw, 3, Color3.new(1, 1, 1), true, 1)
+        sw.MouseButton1Click:Connect(function()
+            UI.applyTheme(i)
+            cfgSet("theme", i); saveConfig()
+            render()
+        end)
+    end
+    render()
 end
 
 -- =========================================================================
@@ -1652,22 +1931,36 @@ end))
 -- [12] HUD BUTTON & DRAGGING
 -- =========================================================================
 do
-    -- HUD button sits in the top-right corner
+    -- HUD button sits in the top-right corner (spinning gradient ring, pops the window in / out)
     local hud = new("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
         Position = UDim2.new(1, -40, 0, 40), Size = UDim2.new(0, 89, 0, 89), ZIndex = 10}, gui)
     new("UIScale", {Scale = 0.5}, hud)
     local toggle = new("TextButton", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
         Position = UDim2.new(0.5, 0, 0.5, 0), Size = UDim2.new(0, 89, 0, 89), AutoButtonColor = false, Text = ""}, hud)
-    corner(toggle, 44)
-    local edge = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 2, 0, 2), Size = UDim2.new(1, -4, 1, -4)}, toggle)
-    corner(edge, 44)
-    stroke(edge, 2, C.STROKE, true)
-    local face = new("Frame", {BackgroundColor3 = Color3.fromRGB(25, 25, 25), BorderSizePixel = 0, ClipsDescendants = true,
-        Position = UDim2.new(0, 4, 0, 4), Size = UDim2.new(1, -8, 1, -8)}, toggle)
-    corner(face, 44)
-    new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), FontFace = FH, Text = "S",
+    UI.hudPulse = new("UIScale", {Scale = 1}, toggle)
+    local ring = new("Frame", {BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 1, 0)}, toggle)
+    corner(ring, 45)
+    UI.grad(ring, 0, "spin")
+    local face = new("Frame", {BackgroundColor3 = C.BG_DARK, BorderSizePixel = 0, Position = UDim2.new(0, 6, 0, 6),
+        Size = UDim2.new(1, -12, 1, -12)}, toggle)
+    corner(face, 45)
+    local sLbl = new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), FontFace = FH, Text = "S",
         TextColor3 = C.TEXT, TextSize = 56}, face)
-    toggle.MouseButton1Click:Connect(function() win.Visible = not win.Visible end)
+    UI.grad(sLbl, 45, "flow")
+    local popTok = 0
+    toggle.MouseButton1Click:Connect(function()
+        popTok = popTok + 1
+        local my = popTok
+        if win.Visible then
+            UI.tw(UI.winScale, {Scale = 0.05}, 0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+            task.delay(0.17, function() if popTok == my then win.Visible = false end end)
+        else
+            UI.winScale.Scale = 0.05
+            win.Visible = true
+            UI.tw(UI.winScale, {Scale = WIN_SCALE}, 0.32, Enum.EasingStyle.Back)
+        end
+    end)
 
     local drag = {active = false}
     header.InputBegan:Connect(function(input)
@@ -1686,6 +1979,46 @@ do
         if drag.active and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local d = input.Position - drag.start
             win.Position = UDim2.new(drag.pos.X.Scale, drag.pos.X.Offset + d.X, drag.pos.Y.Scale, drag.pos.Y.Offset + d.Y)
+        end
+    end))
+end
+
+-- =========================================================================
+-- [12b] ANIMATION LOOP (one 30 Hz heartbeat drives every effect, stops with the script)
+-- =========================================================================
+do
+    local acc, rot, scanPos = 0, 0, 0
+    track(RunService.Heartbeat:Connect(function(dt)
+        if S.dead then return end
+        acc = acc + dt
+        if acc < 0.033 then return end
+        local step = acc
+        acc = 0
+        local t = os.clock()
+        local live = UI.runOn
+        rot = (rot + step * (live and 150 or 55)) % 360
+        for _, g in ipairs(UI.spin) do g.Rotation = rot end
+        local off = Vector2.new(math.sin(t * 1.4) * 0.55, 0)
+        for _, g in ipairs(UI.flow) do g.Offset = off end
+        if UI.logoScale then UI.logoScale.Scale = 1 + 0.04 * math.sin(t * 2.6) end
+        if win.Visible then
+            local mul = live and 2.2 or 1
+            for _, p in ipairs(UI.parts) do
+                p.y = p.y - p.v * step * mul
+                if p.y < -0.03 then p.y = 1.03; p.x = 0.05 + math.random() * 0.9 end
+                p.f.Position = UDim2.fromScale(p.x + math.sin(t * 0.8 + p.ph) * p.sw * 4, p.y)
+            end
+            scanPos = (scanPos + step * (live and 260 or 120)) % (FULL_HEIGHT + 140)
+            UI.scan.Position = UDim2.new(0, 12, 0, scanPos - 100)
+        end
+        if live then
+            local pulse = 0.5 + 0.5 * math.sin(t * 6)
+            UI.dot.BackgroundTransparency = 0.55 * (1 - pulse)
+            if UI.startStroke then
+                UI.startStroke.Transparency = 0.1 + 0.5 * (1 - pulse)
+                UI.startStroke.Thickness = 2.5 + 1.5 * pulse
+            end
+            if UI.hudPulse then UI.hudPulse.Scale = 1 + 0.07 * pulse end
         end
     end))
 end
