@@ -717,17 +717,25 @@ local function findConfirmButton()
     return fallback
 end
 
+local cachedBox, cachedConfirm
+local function getBox()
+    if cachedBox and cachedBox.Parent then return cachedBox end
+    cachedBox = findCodeBox()
+    return cachedBox
+end
+local function getConfirm()
+    if cachedConfirm and cachedConfirm.Parent then return cachedConfirm end
+    cachedConfirm = findConfirmButton()
+    return cachedConfirm
+end
+
 local function submitOnce(text)
-    local box = findCodeBox()
+    local box = getBox()
     if not box then return false, "code box not found" end
-    pcall(function()
-        box.Text = text
-        box.Active = true
-        box.Selectable = true
-    end)
+    if box.Text ~= text then pcall(function() box.Text = text end) end
 
     if getconnections_ then
-        local confirm = findConfirmButton()
+        local confirm = getConfirm()
         local ok = false
         if confirm then
             local a = fireConnections(confirm.MouseButton1Click)
@@ -745,7 +753,7 @@ local function submitOnce(text)
 
     -- no getconnections: classic focus release
     if not pcall(function() box:CaptureFocus() end) then return false, "focus failed" end
-    task.wait(0.1)
+    task.wait(0.03)
     local ok = pcall(function() box:ReleaseFocus(true) end)
     return ok, ok and "submitted" or "release failed"
 end
@@ -928,10 +936,10 @@ local function submitCapturedCode(code, partsList)
     S.lastCode = code
     S.stamp = os.clock()
     local stamp = S.stamp
-    playPing()
 
     -- Auto Type OFF: only show the code, user presses USE in the Feed
     if not S.autoTypeOn then
+        playPing()
         setRunning(false)
         UI.codeLabel.Text = code
         setStatus("caught: " .. code, "ok")
@@ -943,10 +951,9 @@ local function submitCapturedCode(code, partsList)
     end
 
     S.submitting = true
-    UI.codeLabel.Text = "Redeeming..."
-    setStatus("redeeming: " .. code, "busy")
     local ok, why = submitCodeAdvanced(code)
     S.submitting = false
+    playPing()
     setRunning(false)
     if ok then setStatus("sent: " .. code, "ok") else setStatus("failed (" .. tostring(why) .. "): " .. code, "err") end
     feedAdd(ok and "Code sent" or ("Code failed: " .. tostring(why)), code)
@@ -955,7 +962,7 @@ local function submitCapturedCode(code, partsList)
     if ok then
         task.spawn(function()
             for _ = 1, 2 do
-                task.wait(0.5)
+                task.wait(0.3)
                 if S.dead then return end
                 submitCodeAdvanced(code)
             end
@@ -979,6 +986,10 @@ local function captureWord(word)
     S.parts[#S.parts + 1] = word
     UI.progress.Text = #S.parts .. "/" .. getWordCount()
     UI.codeLabel.Text = table.concat(S.parts)
+    if S.autoTypeOn then
+        local box = getBox()
+        if box then pcall(function() box.Text = table.concat(S.parts) end) end
+    end
     if #S.parts >= getWordCount() then
         local list = S.parts
         local code = table.concat(list)
