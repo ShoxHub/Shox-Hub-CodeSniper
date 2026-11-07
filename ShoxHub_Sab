@@ -729,8 +729,18 @@ local function getConfirm()
     return cachedConfirm
 end
 
--- Fast path: resolve box, confirm button and their callbacks BEFORE the code arrives
+-- Fast path: resolve box, confirm button, callbacks AND their debounce booleans BEFORE the code arrives
 local fast
+local function collectBools(fn, depth, out)
+    if not (fn and getupvalues_ and setupvalue_) then return end
+    local ok, ups = pcall(getupvalues_, fn)
+    if ok and type(ups) == "table" then
+        for k, v in pairs(ups) do
+            if type(v) == "boolean" then out[#out + 1] = {fn, k}
+            elseif type(v) == "function" and depth > 0 then collectBools(v, depth - 1, out) end
+        end
+    end
+end
 local function buildFast()
     if not getconnections_ then return nil end
     local box, confirm = getBox(), getConfirm()
@@ -743,7 +753,11 @@ local function buildFast()
                 if c.Enabled ~= false then
                     local cb
                     pcall(function() cb = c.Function end)
-                    if cb then cbs[#cbs + 1] = cb end
+                    if cb then
+                        local bools = {}
+                        collectBools(cb, 1, bools)
+                        cbs[#cbs + 1] = {cb = cb, bools = bools}
+                    end
                 end
             end
         end
@@ -762,9 +776,10 @@ local function submitOnce(text)
     if fast and fast.box.Parent and fast.confirm.Parent then
         local f = fast
         if f.box.Text ~= text then pcall(function() f.box.Text = text end) end
-        for _, cb in ipairs(f.cbs) do
-            clearBooleans(cb)
-            task.spawn(cb)
+        for _, e in ipairs(f.cbs) do
+            local bl = e.bools
+            for i = 1, #bl do pcall(setupvalue_, bl[i][1], bl[i][2], false) end
+            task.spawn(e.cb)
         end
         return true, "submitted"
     end
@@ -992,31 +1007,35 @@ local function submitCapturedCode(code, partsList)
     S.submitting = true
     local ok, why = submitCodeAdvanced(code)
     S.submitting = false
-    playPing()
-    setRunning(false)
-    if ok then setStatus("sent: " .. code, "ok") else setStatus("failed (" .. tostring(why) .. "): " .. code, "err") end
-    feedAdd(ok and "Code sent" or ("Code failed: " .. tostring(why)), code)
 
     -- confirm retries (game sometimes eats the first click)
     if ok then
         task.spawn(function()
             for _ = 1, 2 do
-                task.wait(0.15)
+                task.wait(0.1)
                 if S.dead then return end
                 submitCodeAdvanced(code)
             end
         end)
     end
 
-    -- Redeem 3 if 4 wrong: remember the 3-word version, use it if the game says "wrong"
-    if ok and S.redeem3On and partsList and #partsList == 4 then
-        S.retry = {code = partsList[1] .. partsList[2] .. partsList[3], untilT = os.clock() + 3}
-    end
-    -- Spam on Listen: spam the fresh code for a few seconds
-    if ok and S.spamOnListen and runSpam then runSpam(4) end
+    -- all UI / sound work AFTER the submit, never blocks it
+    task.defer(function()
+        playPing()
+        setRunning(false)
+        if ok then setStatus("sent: " .. code, "ok") else setStatus("failed (" .. tostring(why) .. "): " .. code, "err") end
+        feedAdd(ok and "Code sent" or ("Code failed: " .. tostring(why)), code)
 
-    task.delay(3, function()
-        if S.stamp == stamp then UI.codeLabel.Text = "Code Will Show Here" end
+        -- Redeem 3 if 4 wrong: remember the 3-word version, use it if the game says "wrong"
+        if ok and S.redeem3On and partsList and #partsList == 4 then
+            S.retry = {code = partsList[1] .. partsList[2] .. partsList[3], untilT = os.clock() + 3}
+        end
+        -- Spam on Listen: spam the fresh code for a few seconds
+        if ok and S.spamOnListen and runSpam then runSpam(4) end
+
+        task.delay(3, function()
+            if S.stamp == stamp then UI.codeLabel.Text = "Code Will Show Here" end
+        end)
     end)
 end
 
@@ -1035,8 +1054,11 @@ local function captureWord(word)
         local box = fast and fast.box or getBox()
         if box then pcall(function() box.Text = joined end) end
     end
-    UI.progress.Text = #S.parts .. "/" .. getWordCount()
-    UI.codeLabel.Text = joined
+    local n = #S.parts
+    task.defer(function()
+        UI.progress.Text = n .. "/" .. getWordCount()
+        UI.codeLabel.Text = joined
+    end)
 end
 
 local function detectTrigger(text)
