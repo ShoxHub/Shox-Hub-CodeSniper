@@ -1,5 +1,5 @@
 -- =========================================================================
--- SHOX HUB CODE SNIPER v1.2
+-- SHOX HUB CODE SNIPER v1.3
 -- =========================================================================
 local cloneref = cloneref or function(x) return x end
 local function svc(name) return cloneref(game:GetService(name)) end
@@ -24,7 +24,7 @@ if genv.__ShoxSniperCleanup then pcall(genv.__ShoxSniperCleanup) end
 local conns = {}
 local function track(c) conns[#conns + 1] = c; return c end
 
-print("[Shox] Code Sniper v1.2 starting")
+print("[Shox] Code Sniper v1.3 starting")
 
 -- =========================================================================
 -- [1] INTRO (1:1 copy of Intro 1 from the Duel script)
@@ -415,11 +415,10 @@ local S = {
     redeem3On = cfgBool("redeem3On", true),
     autoTypeOn = cfgBool("autoTypeOn", true),
     spamOnListen = cfgBool("spamOnListen", false),
-    wordMode = cfgBool("wordMode", false),
     ignoreSystem = cfgBool("ignoreSystem", true),
     spamDelay = cfgNum("spamDelay", 0.15),
     parts = {}, seen = {}, submitting = false, spamming = false,
-    lastCode = nil, stamp = 0,
+    lastCode = nil, stamp = 0, lastNotifAt = 0,
     origExecute = nil, eventCtl = nil, anchor = false, ragdoll = false, fps = false, autoBuy = false,
     oldQuality = nil, oldShadows = nil, retry = nil, dead = false,
 }
@@ -530,6 +529,7 @@ genv.__ShoxSniperCleanup = function()
     S.spamming = false
     for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
     if UI.buyStop then pcall(UI.buyStop) end
+    if S.fps and UI.fpsSet then pcall(UI.fpsSet, false) end
     if S.eventCtl and S.origExecute then pcall(function() S.eventCtl.Execute = S.origExecute end) end
     pcall(shoxIntroFinish)
     if gui then pcall(function() gui:Destroy() end) end
@@ -759,7 +759,7 @@ local function buildFast()
     if not getconnections_ then return nil end
     local box, confirm = getBox(), getConfirm()
     if not (box and confirm) then return nil end
-    local cbs = {}
+    local cbs, seenCb = {}, {}
     for _, sig in ipairs({confirm.MouseButton1Click, confirm.Activated}) do
         local ok, list = pcall(getconnections_, sig)
         if ok and type(list) == "table" then
@@ -767,7 +767,8 @@ local function buildFast()
                 if c.Enabled ~= false then
                     local cb
                     pcall(function() cb = c.Function end)
-                    if cb then
+                    if cb and not seenCb[cb] then
+                        seenCb[cb] = true
                         local bools = {}
                         collectBools(cb, 1, bools)
                         cbs[#cbs + 1] = {cb = cb, bools = bools}
@@ -871,8 +872,6 @@ do
 
     local spamRow = makeRow(page, 380, "Spam Mode", 22)
     UI.spamBtn, UI.spamFill, UI.spamLbl = makeToggleButton(spamRow, 476, "OFF")
-    local evtRow = makeRow(page, 456, "Event Block", 22)
-    UI.evtBtn, UI.evtFill, UI.evtLbl = makeToggleButton(evtRow, 476, "OFF")
 end
 
 local function getWordCount() return S.wordsIndex end
@@ -893,7 +892,7 @@ UI.renderWords()
 do
     local defs = {
         {"Sounds", "soundsOn"}, {"Redeem 3 if 4 wrong", "redeem3On"}, {"Auto Type", "autoTypeOn"},
-        {"Spam on Listen", "spamOnListen"}, {"Word Mode", "wordMode"}, {"Ignore System", "ignoreSystem"},
+        {"Spam on Listen", "spamOnListen"}, {"Ignore System", "ignoreSystem"},
     }
     for i, d in ipairs(defs) do
         local row = makeRow(UI.tabs.Settings.page, (i - 1) * 76, d[1], 22)
@@ -1023,11 +1022,13 @@ local function submitCapturedCode(code, partsList)
     S.submitting = false
 
     -- confirm retries (game sometimes eats the first click)
+    -- only re-send if the game has not answered yet (any notification = answered); avoids "unexpected error" from double redeems
     if ok then
+        local sentAt = os.clock()
         task.spawn(function()
             for _ = 1, 2 do
-                task.wait(0.1)
-                if S.dead then return end
+                task.wait(0.15)
+                if S.dead or S.lastNotifAt > sentAt then return end
                 submitCodeAdvanced(code)
             end
         end)
@@ -1094,14 +1095,8 @@ local function hasAny(lower, list)
     return false
 end
 
--- Word Mode ON: every notification counts as ONE word (spaces/symbols removed)
 local function feedWords(str)
-    if S.wordMode then
-        local w = (str:gsub("[^%w_]", ""))
-        if w ~= "" then captureWord(w) end
-    else
-        for word in str:gmatch("[%w_]+") do captureWord(word) end
-    end
+    for word in str:gmatch("[%w_]+") do captureWord(word) end
 end
 
 local function processText(text)
@@ -1161,6 +1156,7 @@ task.spawn(function()
             if not text then return end
             text = stripTags(text):match("^%s*(.-)%s*$") or ""
             if text == "" then return end
+            S.lastNotifAt = os.clock()
             pcall(processText, text)
         end))
     end)
@@ -1194,20 +1190,20 @@ UI.setSpam = makeToggle(UI.spamBtn, UI.spamFill, UI.spamLbl, false, function(v)
     end
 end)
 
-makeToggle(UI.evtBtn, UI.evtFill, UI.evtLbl, false, function(v)
-    local ok = pcall(function()
-        local controllers = ReplicatedStorage:FindFirstChild("Controllers")
-        local ec = S.eventCtl or require(controllers:FindFirstChild("EventController", true))
-        S.eventCtl = ec
-        if v then
+-- Event Block: permanently on (no menu toggle), restored on cleanup
+task.spawn(function()
+    for _ = 1, 60 do
+        if S.dead then return end
+        local ok = pcall(function()
+            local controllers = ReplicatedStorage:FindFirstChild("Controllers")
+            local ec = require(controllers:FindFirstChild("EventController", true))
             if not S.origExecute then S.origExecute = ec.Execute end
+            S.eventCtl = ec
             ec.Execute = function() return false end
-        elseif S.origExecute then
-            ec.Execute = S.origExecute
-        end
-    end)
-    if not ok then setStatus("Event Block failed", "err"); return false end
-    setStatus(v and "Events blocked" or "Events unblocked", v and "ok" or nil)
+        end)
+        if ok then return end
+        task.wait(1)
+    end
 end)
 
 local function applyAnchor(v)
@@ -1311,6 +1307,86 @@ do
     end
 end
 
+-- FPS BOOST: lowest quality, no shadows/effects/particles, flat materials; restores everything on OFF
+do
+    local saved, partOrig, fxOrig, addC = {}, {}, {}, nil
+    local FX_CLASSES = {ParticleEmitter = true, Trail = true, Beam = true, Smoke = true, Fire = true,
+        Sparkles = true, Explosion = true, PointLight = true, SpotLight = true, SurfaceLight = true}
+    local POST_CLASSES = {BloomEffect = true, BlurEffect = true, ColorCorrectionEffect = true,
+        DepthOfFieldEffect = true, SunRaysEffect = true, Atmosphere = true}
+
+    local function boost(d)
+        if d:IsA("BasePart") then
+            if partOrig[d] == nil and not d:IsA("Terrain") then
+                partOrig[d] = {d.Material, d.Reflectance, d.CastShadow}
+                d.Material = Enum.Material.SmoothPlastic
+                d.Reflectance = 0
+                d.CastShadow = false
+            end
+        elseif FX_CLASSES[d.ClassName] then
+            if fxOrig[d] == nil then fxOrig[d] = d.Enabled; d.Enabled = false end
+        end
+    end
+
+    function UI.fpsSet(v)
+        S.fps = v
+        pcall(function()
+            if v then
+                saved.quality = saved.quality or settings().Rendering.QualityLevel
+                saved.shadows = Lighting.GlobalShadows
+                saved.fogEnd = Lighting.FogEnd
+                saved.bright = Lighting.Brightness
+                settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+                Lighting.GlobalShadows = false
+                Lighting.FogEnd = 9e9
+                saved.post = {}
+                for _, e in ipairs(Lighting:GetChildren()) do
+                    if POST_CLASSES[e.ClassName] then
+                        saved.post[e] = e.Enabled ~= nil and e.Enabled or true
+                        pcall(function() e.Enabled = false end)
+                        if e:IsA("Atmosphere") then pcall(function() e.Density = 0 end) end
+                    end
+                end
+                pcall(function()
+                    local t = workspace.Terrain
+                    saved.water = {t.WaterWaveSize, t.WaterReflectance, t.WaterTransparency}
+                    t.WaterWaveSize = 0; t.WaterReflectance = 0; t.WaterTransparency = 1
+                    t.Decoration = false
+                end)
+                if addC then addC:Disconnect() end
+                addC = workspace.DescendantAdded:Connect(function(d) pcall(boost, d) end)
+                task.spawn(function()
+                    local n = 0
+                    for _, d in ipairs(workspace:GetDescendants()) do
+                        if not S.fps or S.dead then return end
+                        pcall(boost, d)
+                        n = n + 1
+                        if n % 400 == 0 then task.wait() end
+                    end
+                end)
+            else
+                if addC then addC:Disconnect(); addC = nil end
+                if saved.quality then settings().Rendering.QualityLevel = saved.quality end
+                if saved.shadows ~= nil then Lighting.GlobalShadows = saved.shadows end
+                if saved.fogEnd then Lighting.FogEnd = saved.fogEnd end
+                for e, en in pairs(saved.post or {}) do pcall(function() e.Enabled = en end) end
+                if saved.water then
+                    pcall(function()
+                        local t = workspace.Terrain
+                        t.WaterWaveSize, t.WaterReflectance, t.WaterTransparency = table.unpack(saved.water)
+                        t.Decoration = true
+                    end)
+                end
+                for d, o in pairs(partOrig) do
+                    pcall(function() d.Material, d.Reflectance, d.CastShadow = o[1], o[2], o[3] end)
+                end
+                for d, en in pairs(fxOrig) do pcall(function() d.Enabled = en end) end
+                partOrig, fxOrig, saved = {}, {}, {}
+            end
+        end)
+    end
+end
+
 do
     local defs = {
         {"Auto Buy", function(v)
@@ -1318,20 +1394,7 @@ do
         end},
         {"Anchor", function(v) S.anchor = v; applyAnchor(v) end},
         {"Anti Ragdoll", function(v) S.ragdoll = v; applyRagdoll(v) end},
-        {"FPS Boost", function(v)
-            S.fps = v
-            pcall(function()
-                if v then
-                    S.oldQuality = S.oldQuality or settings().Rendering.QualityLevel
-                    S.oldShadows = Lighting.GlobalShadows
-                    settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
-                    Lighting.GlobalShadows = false
-                else
-                    if S.oldQuality then settings().Rendering.QualityLevel = S.oldQuality end
-                    if S.oldShadows ~= nil then Lighting.GlobalShadows = S.oldShadows end
-                end
-            end)
-        end},
+        {"FPS Boost", function(v) UI.fpsSet(v) end},
     }
     for i, d in ipairs(defs) do
         local row = makeRow(UI.tabs.TraitFarm.page, (i - 1) * 76, d[1])
